@@ -33,6 +33,7 @@ PORT
 	ANTIC_ENABLE_179 : IN std_logic;
 	
 	PAL : IN STD_LOGIC;
+	EXT_ANTIC : IN STD_LOGIC := '0';
 	
 	lightpen : in std_logic;
 	
@@ -46,6 +47,7 @@ PORT
 	COLOUR_CLOCK_ORIGINAL_OUT : out std_logic;
 	COLOUR_CLOCK_OUT : out std_logic;
 	HIGHRES_COLOUR_CLOCK_OUT : out std_logic; -- 2x to allow for half pixel modes
+	VBXE_COLOUR_CLOCK_OUT : out std_logic; -- 4x to allow for VBXE highres pixel mode
 	
 	-- DMA fetch
 	dma_fetch_out : out std_logic;
@@ -453,6 +455,7 @@ ARCHITECTURE vhdl OF antic IS
 	signal colour_clock_half_x : std_logic;
 	signal colour_clock_selected : std_logic;
 	signal colour_clock_selected_highres : std_logic;
+	signal colour_clock_selected_vbxe : std_logic;
 	
 	signal colour_clock_shift_reg : std_logic_vector(cycle_length-1 downto 0);
 	signal colour_clock_shift_next : std_logic_vector(cycle_length-1 downto 0);
@@ -685,6 +688,7 @@ BEGIN
 		enable_dma <= colour_clock_half_x;
 		colour_clock_selected <= colour_clock_1x;
 		colour_clock_selected_highres <= colour_clock_2x;		
+		colour_clock_selected_vbxe <= colour_clock_4x;
 		dmactl_delayed_enabled <= '0';
 		playfield_dma_start <= playfield_dma_start_raw;
 		playfield_dma_end <= playfield_dma_end_raw;
@@ -701,6 +705,7 @@ BEGIN
 			enable_dma <= colour_clock_1x;
 			colour_clock_selected <= colour_clock_2x;		
 			colour_clock_selected_highres <= colour_clock_4x;
+			colour_clock_selected_vbxe <= '0'; -- VBXE won't work with Antic highres
 			dmactl_delayed_enabled <= '1';
 			playfield_dma_start <= playfield_dma_start_reg(3+24);
 			playfield_dma_end <= playfield_dma_end_reg(7+24);
@@ -710,6 +715,7 @@ BEGIN
 			enable_dma <= colour_clock_2x;
 			colour_clock_selected <= colour_clock_4x;
 			colour_clock_selected_highres <= colour_clock_8x;
+			colour_clock_selected_vbxe <= '0'; -- VBXE won't work with Antic highres
 			dmactl_delayed_enabled <= '1';
 			playfield_dma_start <= playfield_dma_start_reg(5+36);
 			playfield_dma_end <= playfield_dma_end_reg(11+36);
@@ -1528,7 +1534,9 @@ BEGIN
 			--shiftclock_next(3) <= shiftclock_reg(0) nor playfield_reset;						
 			case shift_rate_reg is
 				when slow_shift =>
-					enable_shift <= (shiftclock_reg(0) and not(hscrol_reg(1) and hscrol_enabled_reg)) or (shiftclock_reg(2) and hscrol_reg(1) and hscrol_enabled_reg);
+					-- HSCROL bit 1 must NOT re-phase the shifter: The old
+					-- shiftclock(2) phase-select added a second +2cc on top
+					enable_shift <= shiftclock_reg(0);
 				when medium_shift =>
 					enable_shift <= shiftclock_reg(2) or shiftclock_reg(0);
 				when fast_shift =>			
@@ -1739,7 +1747,7 @@ BEGIN
 	
 		if (wr_en = '1') then
 			if(addr_decoded(0) = '1') then
-				dmactl_raw_next <= cpu_data_in(6 downto 0);
+				dmactl_raw_next(6 downto 0) <= (cpu_data_in(6) and EXT_ANTIC) & cpu_data_in(5 downto 0);
 			end if;	
 
 			if(addr_decoded(1) = '1') then
@@ -1849,6 +1857,7 @@ BEGIN
 	COLOUR_CLOCK_ORIGINAL_OUT <= colour_clock_1x;
 	COLOUR_CLOCK_OUT <= colour_clock_selected;
 	HIGHRES_COLOUR_CLOCK_OUT <= colour_clock_selected_highres;
+	VBXE_COLOUR_CLOCK_OUT <= colour_clock_selected_vbxe;
 
 	vcount_out <= vcount_reg;
 	hcount_out <= hcount_reg(9 downto 2);
