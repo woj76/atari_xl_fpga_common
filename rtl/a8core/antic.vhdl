@@ -1729,7 +1729,7 @@ BEGIN
 	--dmactl_delayed_reg <= dmactl_raw_reg;
 		
 	-- Writes to registers
-	process(cpu_data_in,wr_en,addr_decoded,nmien_raw_reg,dmactl_raw_reg,chactl_reg,hscrol_reg,display_list_address_reg,chbase_raw_reg,pmbase_reg,vscrol_raw_reg, wsync_reg, wsync_delayed_write, wsync_reset)
+	process(cpu_data_in,wr_en,addr_decoded,nmien_raw_reg,dmactl_raw_reg,chactl_reg,hscrol_reg,display_list_address_reg,chbase_raw_reg,pmbase_reg,vscrol_raw_reg, wsync_reg, wsync_delayed_write, wsync_reset,EXT_ANTIC)
 	begin		
 		nmien_raw_next <= nmien_raw_reg;
 		dmactl_raw_next <= dmactl_raw_reg;

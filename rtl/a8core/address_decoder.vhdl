@@ -43,6 +43,25 @@ PORT
 	DMA_8BIT_WRITE_ENABLE : in std_logic; -- for hardware regs	
 	DMA_WRITE_DATA : in std_logic_vector(31 downto 0);
 	
+	-- VBXE
+	VBXE_SWITCH : in std_logic := '0'; -- is VBXE enabled (by the user)?
+	VBXE_REG_BASE : in std_logic := '0'; -- 0 -> $D640, 1 -> $D740
+	VBXE_DATA : in std_logic_vector(7 downto 0) := (others => '1');
+	CACHE_VBXE_DATA : in std_logic_vector(7 downto 0) := (others => '1');
+	VBXE_WRITE_ENABLE : out std_logic;
+	VBXE_SOFT_RESET : out std_logic; -- comes from any $8x write to GTIA
+
+	-- VBXE MEMAC
+	memac_address : out std_logic_vector(15 downto 0);
+	memac_write_enable : out std_logic;
+	memac_cpu_access : out std_logic;
+	memac_antic_access : out std_logic;
+	memac_check : in std_logic := '0';
+	memac_data_write : out std_logic_vector(7 downto 0);
+	memac_data_read : in std_logic_vector(7 downto 0) := (others => '0');
+	memac_request : out std_logic;
+	memac_request_complete : in std_logic := '0';
+
 	-- sources of data
 	ROM_DATA : IN STD_LOGIC_VECTOR(7 downto 0);	-- flash rom
 	GTIA_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
@@ -191,6 +210,7 @@ ARCHITECTURE vhdl OF address_decoder IS
 		
 	signal ram_chip_select : std_logic;
 	signal sdram_chip_select : std_logic;
+	signal memac_chip_select : std_logic;
 	
 --	signal sdram_request_next : std_logic;
 --	signal sdram_request_reg : std_logic;
@@ -508,6 +528,15 @@ BEGIN
 	
 	WRITE_DATA <= DATA_WRITE_next;
 
+	-- VBXE memac
+
+	memac_address <= addr_next(15 downto 0);
+	memac_write_enable <= write_enable_next;
+	memac_cpu_access <= cpu_fetch_real_next;
+	memac_antic_access <= antic_fetch_real_next;
+	memac_data_write <= data_write_next(7 downto 0);
+	memac_request <= memac_chip_select;
+
 	-- a little sdram glue - move to sdram wrapper? TODO
 	--SDRAM_REQUEST_COMPLETE <= (SDRAM_REPLY xnor sdram_request_reg) and not(start_request);
 	--sdram_request_next <= sdram_request_reg xor sdram_chip_select;	
@@ -678,6 +707,10 @@ end generate;
 		CACHE_GTIA_DATA,CACHE_POKEY_DATA,CACHE_ANTIC_DATA,
 		LAST_BUS_REG,
 		
+		-- input from VBXE (memac)
+		VBXE_SWITCH,VBXE_REG_BASE,VBXE_DATA,CACHE_VBXE_DATA,
+		memac_check,memac_data_read,memac_request_complete,
+
 		-- input data from n sources complete?
 		-- hardware regs take 1 cycle, so always complete		
 		ram_request_complete,sdram_request_complete,rom_request_complete,pbi_request_complete,
@@ -718,6 +751,9 @@ end generate;
 		D6_WR_ENABLE <= '0';
 		ROM_WR_ENABLE <= '0';
 
+		VBXE_WRITE_ENABLE <= '0';
+		VBXE_SOFT_RESET <= '0';
+
 		RAM_WR_ENABLE <= write_enable_next;
 		SDRAM_WRITE_EN <= write_enable_next;		
 		
@@ -738,6 +774,7 @@ end generate;
 		
 		ram_chip_select <= '0';
 		sdram_chip_select <= '0';
+		memac_chip_select <= '0';
 		
 	--	if (addr_next(23 downto 17) = "0000000" ) then -- bit 16 left out on purpose, so the Atari 64k is available as 64k-128k for zpu. The zpu has rom at 0-64k...
 		if (or_reduce(addr_next(23 downto 18)) = '0' ) then -- bit 16,17 left out on purpose, so the Atari 64k is available as 64k-128k for zpu. The zpu has rom at 0-64k...
@@ -746,21 +783,27 @@ end generate;
 		SDRAM_ADDR(22 downto 14) <= extended_bank;
 		RAM_ADDR(13 downto 0) <= addr_next(13 downto 0);
 		RAM_ADDR(18 downto 14) <= extended_bank(4 downto 0);
-					
-		if (has_ram='1') then
-			if (sdram_only_bank='1') then
-				MEMORY_DATA_INT(7 downto 0) <= SDRAM_DATA(7 downto 0);
-				sdram_chip_select <= start_request;
-				request_complete <= sdram_request_COMPLETE;
-			else
-				MEMORY_DATA_INT(7 downto 0) <= RAM_DATA(7 downto 0);
-
-				ram_chip_select <= start_request;
-				request_complete <= ram_request_COMPLETE;
-			end if;
+		
+		if (memac_check = '1') and not((emu_cart_enable = '1') and emu_cart_address_enable) then
+			MEMORY_DATA_INT(7 DOWNTO 0) <= memac_data_read;
+			memac_chip_select <= start_request;
+			request_complete <= memac_request_complete;
 		else
-			MEMORY_DATA_INT(7 downto 0) <= last_bus_reg;
-			request_complete <= '1';
+			if (has_ram='1') then
+				if (sdram_only_bank='1') then
+					MEMORY_DATA_INT(7 downto 0) <= SDRAM_DATA(7 downto 0);
+					sdram_chip_select <= start_request;
+					request_complete <= sdram_request_COMPLETE;
+				else
+					MEMORY_DATA_INT(7 downto 0) <= RAM_DATA(7 downto 0);
+
+					ram_chip_select <= start_request;
+					request_complete <= ram_request_COMPLETE;
+				end if;
+			else
+				MEMORY_DATA_INT(7 downto 0) <= last_bus_reg;
+				request_complete <= '1';
+			end if;
 		end if;
 		
 		if system=0 then
@@ -797,6 +840,7 @@ end generate;
 					request_complete <= '1';
 					sdram_chip_select <= '0';
 					ram_chip_select <= '0';
+					VBXE_SOFT_RESET <= write_enable_next and addr_next(7);
 
 				when X"D1" =>
 					sdram_chip_select <= '0';
@@ -854,9 +898,15 @@ end generate;
 						end if;
 					end if;
 					
-				when X"D6" =>
-					D6_WR_ENABLE <= write_enable_next;
-					MEMORY_DATA_INT(7 downto 0) <= last_bus_reg;
+				when X"D6"|X"D7" =>
+					if addr_next(8 downto 2) = "0000000" then
+						D6_WR_ENABLE <= write_enable_next;
+						MEMORY_DATA_INT(7 downto 0) <= last_bus_reg;
+					elsif (VBXE_SWITCH = '1') and (addr_next(8) = VBXE_REG_BASE) and (addr_next(7 downto 5) = "010") then
+						VBXE_WRITE_ENABLE <= write_enable_next;
+						MEMORY_DATA_INT(7 downto 0) <= VBXE_DATA;
+						MEMORY_DATA_INT(15 downto 8) <= CACHE_VBXE_DATA;
+					end if;
 					sdram_chip_select <= '0';
 					ram_chip_select <= '0';	
 					request_complete <= '1';

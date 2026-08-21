@@ -829,7 +829,7 @@ begin
 	
 		
 	-- decode antic input
-	process (AN, COLOUR_CLOCK, COLOUR_CLOCK_ORIGINAL, an_prev_reg, an_prev2_reg, an_prev3_reg, hblank_reg, vsync_reg, highres_reg, odd_scanline_reg, prior_delayed_reg, prior_delayed2_reg, hpos_alt_reg, active_p0_live, active_p1_live, active_p2_live, active_p3_live, active_m0_live, active_m1_live, active_m2_live, active_m3_live, active_pf3_collision_live, active_bk_modify_reg, active_bk_modify_next, active_bk_valid_reg, active_hr_reg, visible_live, hpos_reg)
+	process (AN, COLOUR_CLOCK, COLOUR_CLOCK_ORIGINAL, an_prev_reg, an_prev2_reg, an_prev3_reg, hblank_reg, vsync_reg, highres_reg, odd_scanline_reg, prior_delayed_reg, prior_delayed2_reg, prior6_prev, hpos_alt_reg, active_p0_live, active_p1_live, active_p2_live, active_p3_live, active_m0_live, active_m1_live, active_m2_live, active_m3_live, active_pf3_collision_live, active_bk_modify_reg, active_bk_modify_next, active_bk_valid_reg, active_hr_reg, visible_live, hpos_reg)
 	begin	
 		hblank_next <= hblank_reg;
 		reset_counter <= '0';
