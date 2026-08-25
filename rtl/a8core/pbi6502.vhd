@@ -12,7 +12,7 @@ use ieee.numeric_std.all;
 --  64k ram that needs ras/cas
 --  cas inhibited when
 --  -io area
---   - no response from io at d100,d500,d600 and d700
+--   - no response from io at d100,d500,d600 and d700 (unless by internal extension)
 --  -rom area
 --   - os
 --   - basic
@@ -64,6 +64,7 @@ PORT
 	ENABLE_179_EARLY : IN STD_LOGIC;
 
 	REQUEST : IN STD_LOGIC;
+	MMU_IO_INT : IN STD_LOGIC;
 	ADDR_IN : IN STD_LOGIC_VECTOR(15 downto 0);
 	DATA_IN : IN STD_LOGIC_VECTOR(7 downto 0);
 	WRITE_IN : IN STD_LOGIC;
@@ -327,8 +328,8 @@ BEGIN
 	process(mmu_io,addr_reg)
 	begin
 		MMU_EXTIO <= '0';
- 		if (MMU_IO='1' and(addr_reg(9 downto 8)="01" or addr_reg(10 downto 9)="11")) then -- 001,101,110,111 -> X01, 11X (D1,D5,D6,D7)
-			MMU_EXTIO <= '1';
+ 		if (MMU_IO='1' and MMU_IO_INT = '0' and (addr_reg(9 downto 8)="01" or addr_reg(10 downto 9)="11")) then -- 001,101,110,111 -> X01, 11X (D1,D5,D6,D7)
+ 			MMU_EXTIO <= '1';
 		end if;
 	end process;
 
