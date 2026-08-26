@@ -24,7 +24,7 @@ use IEEE.STD_LOGIC_MISC.ALL;
 
 entity VBXE is
 generic ( 
-	cycle_length : integer := 16 -- Currently unused, but leave just in case
+	cycle_length : integer := 16
 );
 port (
 	clk : in std_logic;
@@ -161,10 +161,14 @@ signal memac_check_reg : std_logic_vector(1 downto 0);
 
 signal dma_state_reg : std_logic_vector(3 downto 0);
 signal dma_state_next : std_logic_vector(3 downto 0);
+signal dma_wait_reg : integer range 0 to cycle_length-1;
+signal dma_wait_next : integer range 0 to cycle_length-1;
 signal memac_request_complete_reg : std_logic;
 signal memac_request_complete_next : std_logic;
 signal memac_request_reg : std_logic_vector(1 downto 0);
 signal memac_request_next : std_logic_vector(1 downto 0);
+signal memac_serviced_reg : std_logic;
+signal memac_serviced_next : std_logic;
 signal memac_data_reg : std_logic_vector(7 downto 0);
 signal memac_data_next : std_logic_vector(7 downto 0);
 signal memac_datain_reg : std_logic_vector(7 downto 0);
@@ -806,8 +810,10 @@ begin
 		mems_reg <= "0UUUUUUU";
 		memb_reg <= "00UUUUUU";
 		dma_state_reg <= "1111";
+		dma_wait_reg <= 0;
 		memac_request_complete_reg <= '0';
 		memac_request_reg <= "00";
+		memac_serviced_reg <= '0';
 		memac_address_reg <= (others=>'0');
 		memac_check_reg <= "00";
 		memac_data_reg <= (others => '0');
@@ -894,8 +900,10 @@ begin
 		p3_reg <= p3_next;
 
 		dma_state_reg <= dma_state_next;
+		dma_wait_reg <= dma_wait_next;
 		memac_request_complete_reg <= memac_request_complete_next;
 		memac_request_reg <= memac_request_next;
+		memac_serviced_reg <= memac_serviced_next;
 		memac_address_reg <= memac_address_next;
 		memac_check_reg <= memac_check_next;
 		memac_data_reg <= memac_data_next;
@@ -1100,7 +1108,7 @@ end process;
 
 -- VBXE DMA state machine
 process(enable_179,
-	dma_state_reg, memac_request_complete_reg,vram_op_reg,memac_data_reg,memac_datain_reg,memac_request_reg, memac_check_reg,
+	dma_state_reg,dma_wait_reg,memac_serviced_reg,memac_request_complete_reg,vram_op_reg,memac_data_reg,memac_datain_reg,memac_request_reg, memac_check_reg,
 	memc_reg,mems_reg,memb_reg,vram_data_in,vram_request_complete,memac_address_reg, blitter_vram_address,blitter_vram_data,blitter_vram_wren,blitter_vram_data_in_reg,
 	blitter_status,blitter_pending_reg, xdl_ovscr_h_reg, xdl_ovscr_v_reg,
 	xdl_map_active_reg, xdl_ov_active_reg, xdl_ov_text_reg, xdl_fetch_reg, xdl_pending_reg, xdl_read_state_reg, xdl_cmd_reg, xdl_active_reg,
@@ -1123,7 +1131,9 @@ begin
 	vram_data <= (others => '0');
 	blitter_vram_data_in_next <= blitter_vram_data_in_reg;
 	dma_state_next <= dma_state_reg;
+	dma_wait_next <= dma_wait_reg + 1;
 	memac_request_complete_next <= memac_request_complete_reg;
+	memac_serviced_next <= memac_serviced_reg;
 	vram_op_next <= vram_op_reg;
 	memac_data_next <= memac_data_reg;
 	blitter_pending_next <= blitter_pending_reg;
@@ -1228,38 +1238,16 @@ begin
 					end if;
 				end if;
 			end if;
-			if (memac_request_reg = "01") then
-				vram_op_next <= '1';
-				vram_request <= '1';
-				if memac_check_reg(0) = '1' then
-					vram_addr <= mems_reg(6 downto 0) & memac_address_reg(11 downto 0);
-					case memc_reg(1 downto 0) is
-					when "00" =>
-						null;
-					when "01" =>
-						vram_addr(12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(0);
-					when "10" =>
-						vram_addr(13 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(1 downto 0);
-					when "11" =>
-						vram_addr(14 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(2 downto 0);
-					end case;
-				else -- memac_check_b = '1'
-					vram_addr <= memb_reg(4 downto 0) & memac_address_reg(13 downto 0);
-				end if;
-				dma_state_next(3) <= '1';
+			if (memac_serviced_reg = '1') then
+				memac_serviced_next <= '0';
 			else
-				dma_state_next(3) <= '0';
 				xdl_or_blitter_notify := true;
 			end if;
-			dma_state_next(2 downto 0) <= "010";
+			dma_state_next <= "0010";
 		end if;
-	when "0010" | "1010" =>
+	when "0010" =>
 		if (vram_op_reg = '0') or (vram_request_complete = '1') then
 			vram_op_next <= '0';
-			if dma_state_reg(3) = '1' then
-				memac_data_next <= vram_data_in;
-				memac_request_complete_next <= '1';
-			end if;
 			if (xdl_ov_tlive_reg = '1') and (xdl_ov_lo_reg = '0') then
 				vram_op_next <= '1';
 				vram_request <= '1';
@@ -1271,7 +1259,6 @@ begin
 			dma_state_next <= "0011";
 		end if;
 	when "0011" =>
-		memac_request_complete_next <= '0';
 		if (vram_op_reg = '0') or (vram_request_complete = '1') then
 			vram_op_next <= '0';
 			if (xdl_ov_tlive_reg = '1') then
@@ -1305,39 +1292,12 @@ begin
 					end if;
 				end if;
 			end if;
-			if (memac_request_reg = "11") then
-				vram_op_next <= '1';
-				vram_request <= '1';
-				vram_wr_en <= '1';
-				vram_data <= memac_datain_reg;
-				if memac_check_reg(0) = '1' then
-					vram_addr <= mems_reg(6 downto 0) & memac_address_reg(11 downto 0);
-					case memc_reg(1 downto 0) is
-					when "00" =>
-						null;
-					when "01" =>
-						vram_addr(12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(0);
-					when "10" =>
-						vram_addr(13 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(1 downto 0);
-					when "11" =>
-						vram_addr(14 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(2 downto 0);
-					end case;
-				else -- memac_check_b = '1'
-					vram_addr <= memb_reg(4 downto 0) & memac_address_reg(13 downto 0);
-				end if;
-				dma_state_next(3) <= '1';
-			else 
-				dma_state_next(3) <= '0';
-				xdl_or_blitter_notify := true;
-			end if;
-			dma_state_next(2 downto 0) <= "100";
+			xdl_or_blitter_notify := true;
+			dma_state_next <= "0100";
 		end if;
-	when "0100" | "1100"=>
+	when "0100" =>
 		if (vram_op_reg = '0') or (vram_request_complete = '1') then
 			vram_op_next <= '0';
-			if dma_state_reg(3) = '1' then
-				memac_request_complete_next <= '1';
-			end if;
 			dma_state_next <= "0101";
 			if (xdl_ov_tlive_reg = '1') then
 				vram_op_next <= '1';
@@ -1355,7 +1315,6 @@ begin
 			end if;
 		end if;
 	when "0101" =>
-		memac_request_complete_next <= '0';
 		if (vram_op_reg = '0') or (vram_request_complete = '1') then
 			vram_op_next <= '0';
 			if (xdl_ov_tlive_reg = '1') then
@@ -1457,31 +1416,32 @@ begin
 	when "1101" =>
 		if (vram_op_reg = '0') or (vram_request_complete = '1') then
 			vram_op_next <= '0';
-			-- Additional MEMAC request check, in case the regular CPU one was pushed out by DMA
-			-- access from the previous cycle, or in case we have DMA request flood to speed up things
-			if memac_request_reg(0) = '1' then
-				vram_op_next <= '1';
-				vram_request <= '1';
-				if memac_check_reg(0) = '1' then
-					vram_addr <= mems_reg(6 downto 0) & memac_address_reg(11 downto 0);
-					case memc_reg(1 downto 0) is
-					when "00" =>
-						null;
-					when "01" =>
-						vram_addr(12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(0);
-					when "10" =>
-						vram_addr(13 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(1 downto 0);
-					when "11" =>
-						vram_addr(14 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(2 downto 0);
-					end case;
-				else -- memac_check_b = '1'
-					vram_addr <= memb_reg(4 downto 0) & memac_address_reg(13 downto 0);
+			if dma_wait_reg < cycle_length - 2 then
+				if memac_request_reg(0) = '1' then
+					memac_serviced_next <= '1';
+					vram_op_next <= '1';
+					vram_request <= '1';
+					if memac_check_reg(0) = '1' then
+						vram_addr <= mems_reg(6 downto 0) & memac_address_reg(11 downto 0);
+						case memc_reg(1 downto 0) is
+						when "00" =>
+							null;
+						when "01" =>
+							vram_addr(12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(0);
+						when "10" =>
+							vram_addr(13 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(1 downto 0);
+						when "11" =>
+							vram_addr(14 downto 12) <= std_logic_vector(unsigned(memac_address_reg(15 downto 12)) - unsigned(memc_reg(7 downto 4)))(2 downto 0);
+						end case;
+					else -- memac_check_b = '1'
+						vram_addr <= memb_reg(4 downto 0) & memac_address_reg(13 downto 0);
+					end if;
+					if memac_request_reg(1) = '1' then
+						vram_wr_en <= '1';
+						vram_data <= memac_datain_reg;
+					end if;
+					dma_state_next <= "1110";
 				end if;
-				if memac_request_reg(1) = '1' then
-					vram_wr_en <= '1';
-					vram_data <= memac_datain_reg;
-				end if;
-				dma_state_next <= "1110";
 			else
 				dma_state_next <= "1111";
 			end if;
@@ -1495,7 +1455,7 @@ begin
 			memac_request_complete_next <= '1';
 			dma_state_next <= "1111";
 		end if;
-	when "1111" =>		--
+	when "1111" =>
 		memac_request_complete_next <= '0';
 	when others =>
 	end case;
@@ -1715,6 +1675,7 @@ begin
 	end if;
 
 	if enable_179 = '1' then
+		dma_wait_next <= 0;
 		dma_state_next <= "0000";
 	end if;
 end process;

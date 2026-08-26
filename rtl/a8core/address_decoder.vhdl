@@ -397,7 +397,7 @@ BEGIN
 	-- state machine
 	
 	-- state machine impl
-	pbi_takeover_adj <= (pbi_takeover) when (memac_check = '0' and (freezer_enable='0' or not(freezer_disable_atari))) else '0';
+	pbi_takeover_adj <= (pbi_takeover) when (freezer_enable='0' or not(freezer_disable_atari)) else '0';
 	fetch_priority <= ANTIC_FETCH&DMA_FETCH&CPU_FETCH;
 	process(fetch_wait_reg, state_reg, addr_reg, data_write_reg, width_8bit_reg, width_16bit_reg, width_32bit_reg, write_enable_reg, write_enable_freezer_reg, fetch_priority, antic_addr, DMA_addr, cpu_addr, request_complete, DMA_8bit_write_enable,DMA_16bit_write_enable,DMA_32bit_write_enable,DMA_read_enable, cpu_write_n, CPU_WRITE_DATA, DMA_WRITE_DATA, antic_fetch_real_reg, cpu_fetch_real_reg, pbi_takeover, pbi_takeover_adj, pbi_release, pbi_cycle_reg)
 	begin
