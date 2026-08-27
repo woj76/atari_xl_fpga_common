@@ -325,7 +325,7 @@ BEGIN
 		end if;
 	end process;
 
-	process(mmu_io,addr_reg)
+	process(mmu_io,mmu_io_int,addr_reg)
 	begin
 		MMU_EXTIO <= '0';
  		if (MMU_IO='1' and MMU_IO_INT = '0' and (addr_reg(9 downto 8)="01" or addr_reg(10 downto 9)="11")) then -- 001,101,110,111 -> X01, 11X (D1,D5,D6,D7)
