@@ -724,7 +724,6 @@ BEGIN
 		serout_holding_load <= '0';
 		serout_holding_next <= serout_holding_reg;
 		
-		serial_reset <= '0';
 		skrest_write <= '0';
 		potgo_write <= '0';
 		
@@ -788,17 +787,13 @@ BEGIN
 
 			if (addr_decoded(15) = '1') then --SKCTL
 				skctl_next <= data_in;
-				
-				if (data_in(6 downto 4)="000") then
-					serial_reset <= '1';
-				end if;
 			end if;	
 	
 		end if;
 	end process;
 	
 	-- Read from registers
-	process(addr_decoded,kbcode,RAND_OUT,IRQST_REG,key_held,shift_held,sio_in_reg,serin_reg,keyboard_overrun_reg, serial_ip_framing_reg, serial_ip_overrun_reg, waiting_for_start_bit, pot_in, pot0_reg, pot1_reg, pot2_reg, pot3_reg, pot4_reg, pot5_reg, pot6_reg, pot7_reg, allpot_reg)
+	process(addr_decoded,kbcode,RAND_OUT,IRQST_REG,key_held,shift_held,sio_in_reg,serin_reg,keyboard_overrun_reg, serial_ip_framing_reg, serial_ip_overrun_reg, waiting_for_start_bit, pot_in, pot0_reg, pot1_reg, pot2_reg, pot3_reg, pot4_reg, pot5_reg, pot6_reg, pot7_reg, allpot_reg, serout_active_next)
 	begin
 		data_out <= X"FF";
 
@@ -851,7 +846,9 @@ BEGIN
 		end if;
 		
 		if (addr_decoded(14) = '1') then --IRQST - bits set to low when irq
-			data_out <= IRQST_REG;
+			-- The below is needed if one of the ACID tests fail, otherwise this:
+			-- data_out <= IRQST_REG;
+			data_out <= IRQST_REG(7 downto 4) & serout_active_next & IRQST_REG(2 downto 0);
 			--break_irq_n & other_key_irq_n & serial_ip_irq_n & serial_op_irq_n & serial_trans_irq_n & timer3_irq_n & timer_1_irq_n & timer_0_irq_n
 		end if;		
 
@@ -993,6 +990,7 @@ BEGIN
 		
 	-- Instantiate pokey noise circuits (lfsr)
 	initmode <= skctl_next(1) nor skctl_next(0);
+	serial_reset <= initmode;
 	poly_17_19_lfsr : pokey_poly_17_9
 		port map(clk=>clk,reset_n=>reset_n,init=>initmode,enable=>enable_179,select_9_17=>audctl_delayed_reg(7),bit_out=>noise_large,rand_out=>rand_out);
 		
@@ -1309,11 +1307,7 @@ end generate;
 		
 		if (((enable_15 and not(skctl_reg(2))) or (enable_179 and skctl_reg(2))) = '1') then
 			pot_counter_next <= std_logic_vector(unsigned(pot_counter_reg) + 1);
-			if (pot_counter_reg = X"E4") then
-				pot_reset_next <= '1'; -- turn on pot dump transistors
-				allpot_next <= (others=>'0');
-			end if;
-			
+
 			if (pot_reset_reg = '0') then
 				if (pot_in(0) = '0') then -- pot now high, latch
 					pot0_next <= pot_counter_reg;
@@ -1341,14 +1335,19 @@ end generate;
 				end if;
 
 				allpot_next <= allpot_reg and not(pot_in);
-			end if;			
+			end if;
+
+			if (pot_counter_reg = X"E4") then
+				pot_reset_next <= '1'; -- turn on pot dump transistors
+				allpot_next <= (others=>'0');
+			end if;
 		end if;
-			
+
 		if (potgo_write = '1') then
 			pot_counter_next <= x"01";
 			pot_reset_next <= '0'; -- turn off pot dump transistors, so they start to get charged
 			allpot_next <= (others=>'1');
-		end if;		
+		end if;
 	end process;
 	
 	-- Outputs
@@ -1367,8 +1366,8 @@ end generate;
 	sio_clockin_oe <= not(clock_input);
 	sio_clockin_out <= serin_clock_reg;
 	
-	pot_reset <= pot_reset_reg;
-		
+	pot_reset <= pot_reset_reg and not(skctl_reg(2));
+
 END vhdl;
 
 

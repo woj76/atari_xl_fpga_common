@@ -31,6 +31,7 @@ PORT
 	MEMORY_READY_CPU : IN STD_LOGIC;
 	MEMORY_DATA_IN : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
 	ANTIC_ENABLE_179 : IN std_logic;
+	ANTIC_ENABLE_179_DOUBLE : OUT std_logic; -- Most convenient place to pick up 2x clock for PokeyMax
 	
 	PAL : IN STD_LOGIC;
 	EXT_ANTIC : IN STD_LOGIC := '0';
@@ -653,6 +654,7 @@ BEGIN
 		reduce_2x(1) := colour_clock_shift_reg(3*cycle_length/4-1);
 
 		colour_clock_2x <= or_reduce(reduce_1x&reduce_2x);
+		ANTIC_ENABLE_179_DOUBLE <= or_reduce(reduce_2x);
 
 		reduce_4x(0) := colour_clock_shift_reg(1*cycle_length/8-1);
 		reduce_4x(1) := colour_clock_shift_reg(3*cycle_length/8-1);
@@ -1816,7 +1818,7 @@ BEGIN
 		end if;
 
 		if(addr_decoded(15) = '1') then --NMIST
-			data_out <= nmist_reg&"00000";
+			data_out <= nmist_reg&"11111";
 		end if;
 		
 	end process;

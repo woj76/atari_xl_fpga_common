@@ -43,7 +43,19 @@ PORT
 	DMA_8BIT_WRITE_ENABLE : in std_logic; -- for hardware regs	
 	DMA_WRITE_DATA : in std_logic_vector(31 downto 0);
 	
-	-- VBXE
+	-- PokeyMax sample memory
+	SAMPLE_RAM_ADDRESS : in std_logic_vector(15 downto 0) := (others => '0');
+    SAMPLE_RAM_WRITE_ENABLE : in std_logic := '0';
+    SAMPLE_RAM_REQUEST : in std_logic := '0';
+    SAMPLE_RAM_READY : out std_logic;
+    SAMPLE_RAM_WRITE_DATA : in std_logic_vector(7 downto 0) := (others => '0');
+
+    -- PokeyMax static SID data
+	SID_ROM_ADDRESS : in std_logic_vector(16 downto 0) := (others => '0');
+    SID_ROM_REQUEST : in std_logic := '0';
+    SID_ROM_READY : out std_logic;
+
+		-- VBXE
 	VBXE_SWITCH : in std_logic := '0'; -- is VBXE enabled (by the user)?
 	VBXE_REG_BASE : in std_logic := '0'; -- 0 -> $D640, 1 -> $D740
 	VBXE_DATA : in std_logic_vector(7 downto 0) := (others => '1');
@@ -68,6 +80,7 @@ PORT
 	CACHE_GTIA_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
 	POKEY_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
 	CACHE_POKEY_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
+	DRIVE_POKEY_DATA : IN STD_LOGIC;
 	ANTIC_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
 	CACHE_ANTIC_DATA : IN STD_LOGIC_VECTOR(7 downto 0);	
 	PIA_DATA : IN STD_LOGIC_VECTOR(7 downto 0);
@@ -113,6 +126,7 @@ PORT
 		-- these all take 1 cycle, so fine to leave device selected in general
 	GTIA_WR_ENABLE : OUT STD_LOGIC;
 	POKEY_WR_ENABLE : OUT STD_LOGIC;
+	POKEY_REQ : OUT STD_LOGIC;
 	ANTIC_WR_ENABLE : OUT STD_LOGIC;
 	PIA_WR_ENABLE : OUT STD_LOGIC;
 	PIA_RD_ENABLE : OUT STD_LOGIC; -- ... except PIA takes action on reads!
@@ -155,7 +169,7 @@ PORT
 	freezer_state_out: out std_logic_vector(2 downto 0);
 
 	-- debugging!
-	state_reg_out: out std_logic_vector(1 downto 0)
+	state_reg_out: out std_logic_vector(2 downto 0)
 );
 
 END address_decoder;
@@ -201,13 +215,16 @@ ARCHITECTURE vhdl OF address_decoder IS
 	signal has_ram : std_logic;
 	
 	-- even though we have 3 targets (flash, ram, rom) and 3 masters, only allow access to one a a time - simpler.
-	signal state_next : std_logic_vector(1 downto 0);
-	signal state_reg : std_logic_vector(1 downto 0);
-	constant state_idle : std_logic_vector(1 downto 0) := "00";
-	constant state_waiting_cpu : std_logic_vector(1 downto 0) := "01";
-	constant state_waiting_DMA : std_logic_vector(1 downto 0) := "10";
-	constant state_waiting_antic : std_logic_vector(1 downto 0) := "11";
-		
+	signal state_next : std_logic_vector(2 downto 0);
+	signal state_reg : std_logic_vector(2 downto 0);
+	constant state_idle : std_logic_vector(2 downto 0) := "000";
+	constant state_waiting_cpu : std_logic_vector(2 downto 0) := "001";
+	constant state_waiting_DMA : std_logic_vector(2 downto 0) := "010";
+	constant state_waiting_antic : std_logic_vector(2 downto 0) := "011";
+    -- constant state_waiting_flash : std_logic_vector(2 downto 0) := "100"; -- For flash cart support
+    constant state_waiting_sample : std_logic_vector(2 downto 0) := "101";
+    constant state_waiting_sid: std_logic_vector(2 downto 0) := "110";
+ 		
 	signal ram_chip_select : std_logic;
 	signal sdram_chip_select : std_logic;
 	signal memac_chip_select : std_logic;
@@ -215,11 +232,6 @@ ARCHITECTURE vhdl OF address_decoder IS
 --	signal sdram_request_next : std_logic;
 --	signal sdram_request_reg : std_logic;
 --	signal SDRAM_REQUEST_COMPLETE	: std_logic;
-	
-	signal fetch_priority : std_logic_vector(2 downto 0);
-	
-	signal fetch_wait_next : std_logic_vector(8 downto 0);
-	signal fetch_wait_reg : std_logic_vector(8 downto 0);	
 	
 	signal antic_fetch_real_next : std_logic;
 	signal antic_fetch_real_reg : std_logic;
@@ -231,7 +243,9 @@ ARCHITECTURE vhdl OF address_decoder IS
 	signal SDRAM_OS_ROM_ADDR : std_logic_vector(22 downto 0);
 	signal SDRAM_FREEZER_RAM_ADDR   : std_logic_vector(22 downto 0);
 	signal SDRAM_FREEZER_ROM_ADDR   : std_logic_vector(22 downto 0);
-	
+    signal SDRAM_SAMPLE_ADDR : std_logic_vector(22 downto 0);
+    signal SDRAM_SID_ADDR : std_logic_vector(22 downto 0);
+
 	signal sdram_only_bank : std_logic;
 
 	signal emu_cart_enable: std_logic;
@@ -279,7 +293,6 @@ BEGIN
 			write_enable_freezer_reg <= '0';
 			data_write_reg <= (others=> '0');
 			--sdram_request_reg <= '0';
-			fetch_wait_reg <= (others=>'0');
 
 			cpu_fetch_real_reg <= '0';
 			antic_fetch_real_reg <= '0';	
@@ -296,7 +309,6 @@ BEGIN
 			write_enable_freezer_reg <= write_enable_freezer_next;
 			data_write_reg <= data_WRITE_next;
 			--sdram_request_reg <= sdram_request_next;
-			fetch_wait_reg <= fetch_wait_next;
 			
 			cpu_fetch_real_reg <= cpu_fetch_real_next;
 			antic_fetch_real_reg <= antic_fetch_real_next;
@@ -398,16 +410,19 @@ BEGIN
 	
 	-- state machine impl
 	pbi_takeover_adj <= (pbi_takeover) when (freezer_enable='0' or not(freezer_disable_atari)) else '0';
-	fetch_priority <= ANTIC_FETCH&DMA_FETCH&CPU_FETCH;
-	process(fetch_wait_reg, state_reg, addr_reg, data_write_reg, width_8bit_reg, width_16bit_reg, width_32bit_reg, write_enable_reg, write_enable_freezer_reg, fetch_priority, antic_addr, DMA_addr, cpu_addr, request_complete, DMA_8bit_write_enable,DMA_16bit_write_enable,DMA_32bit_write_enable,DMA_read_enable, cpu_write_n, CPU_WRITE_DATA, DMA_WRITE_DATA, antic_fetch_real_reg, cpu_fetch_real_reg, pbi_takeover, pbi_takeover_adj, pbi_release, pbi_cycle_reg)
+	process(state_reg, addr_reg, data_write_reg, width_8bit_reg, width_16bit_reg, width_32bit_reg, write_enable_reg, write_enable_freezer_reg, antic_addr, DMA_addr, cpu_addr, request_complete, DMA_8bit_write_enable,DMA_16bit_write_enable,DMA_32bit_write_enable,DMA_read_enable, cpu_write_n, CPU_WRITE_DATA, DMA_WRITE_DATA, antic_fetch_real_reg, cpu_fetch_real_reg, pbi_takeover, pbi_takeover_adj, pbi_release, pbi_cycle_reg,
+        ANTIC_FETCH,DMA_FETCH,CPU_FETCH,
+		sample_ram_request,sample_ram_address,sample_ram_write_data,sample_ram_write_enable,SDRAM_SAMPLE_ADDR,
+        sid_rom_request,sid_rom_address,SDRAM_SID_ADDR)
 	begin
 		start_request <= '0';
 		pbi_request <= '0';
 		notify_antic <= '0';
 		notify_cpu <= '0';
 		notify_DMA <= '0';
+		SAMPLE_RAM_READY <= '0';
+		SID_ROM_READY <= '0';
 		state_next <= state_reg;
-		fetch_wait_next <= std_logic_vector(unsigned(fetch_wait_reg) + to_unsigned(1,9));
 		pbi_cycle_next <= pbi_cycle_reg;
 
 		addr_next <= addr_reg;
@@ -424,7 +439,6 @@ BEGIN
 		
 		case state_reg is
 			when state_idle =>
-				fetch_wait_next <= (others=>'0');
 				write_enable_next <= '0';
 				write_enable_freezer_next <= '0';
 				width_8bit_next <= '0';
@@ -433,8 +447,7 @@ BEGIN
 				data_WRITE_next <= (others => '0');
 				addr_next <= DMA_ADDR(23 downto 16)&cpu_ADDR(15 downto 0);				
 				
-				case fetch_priority is
-				when "100"|"101"|"110"|"111" => -- antic wins
+				if ANTIC_FETCH = '1' then -- antic wins
 					start_request <= not(pbi_takeover_adj);
 					pbi_request <= pbi_takeover_adj;
 					pbi_cycle_next <= pbi_takeover_adj;
@@ -447,7 +460,51 @@ BEGIN
 					end if;
 					antic_fetch_real_next <= '1';
 					cpu_fetch_real_next <= '0';
-				when "010"|"011" => -- DMA wins (DMA usually accesses own ROM memory - this is NOT a DMA_fetch)
+				elsif CPU_FETCH = '1' then  -- 6502 wins
+					start_request <= not(pbi_takeover_adj);
+					pbi_request <= pbi_takeover_adj;
+					pbi_cycle_next <= pbi_takeover_adj;
+					addr_next <= "00000000"&cpu_ADDR;
+					data_WRITE_next(7 downto 0) <= cpu_WRITE_DATA;
+					width_8bit_next <= '1';
+					write_enable_next <= not(cpu_WRITE_N) and not(pbi_takeover_adj);
+					write_enable_freezer_next <= not(cpu_WRITE_N);
+					pbi_wr_enable <= not(cpu_WRITE_N) and pbi_takeover_adj;
+					if (pbi_takeover_adj='0' and request_complete = '1') then
+						notify_cpu <= '1';
+					else
+						state_next <= state_waiting_cpu;
+					end if;
+					cpu_fetch_real_next <= '1';
+					antic_fetch_real_next <= '0';
+				elsif sample_ram_request = '1' then
+					start_request <= '1';
+					addr_next <= '1' & SDRAM_SAMPLE_ADDR;
+					data_WRITE_next(7 downto 0) <= SAMPLE_RAM_WRITE_DATA;
+					width_8bit_next <= '1';
+					write_enable_next <= SAMPLE_RAM_WRITE_ENABLE;
+
+					if (request_complete = '1') then
+						SAMPLE_RAM_READY <= '1';
+					else
+						state_next <= state_waiting_sample;
+					end if;
+					antic_fetch_real_next <= '0';
+					cpu_fetch_real_next <= '0';
+				elsif sid_rom_request = '1' then
+					start_request <= '1';
+					addr_next <= '1' & SDRAM_SID_ADDR;
+					width_32bit_next <= '1';
+					write_enable_next <= '0';
+
+					if (request_complete = '1') then
+						SID_ROM_READY <= '1';
+					else
+						state_next <= state_waiting_sid;
+					end if;
+					antic_fetch_real_next <= '0';
+					cpu_fetch_real_next <= '0';
+				elsif DMA_FETCH = '1' then -- DMA wins (DMA usually accesses own ROM memory - this is NOT a DMA_fetch)
 					-- TODO, lower priority than 6502, except on first request in block...
 					start_request <= '1';
 					addr_next <= DMA_ADDR;
@@ -471,28 +528,7 @@ BEGIN
 					-- (specifically important for DMA based XEX loader)
 					antic_fetch_real_next <= '0';
 					cpu_fetch_real_next <= not(or_reduce(DMA_ADDR(23 downto 18)));
-				when "001" => -- 6502 wins
-					start_request <= not(pbi_takeover_adj);
-					pbi_request <= pbi_takeover_adj;
-					pbi_cycle_next <= pbi_takeover_adj;
-					addr_next <= "00000000"&cpu_ADDR;
-					data_WRITE_next(7 downto 0) <= cpu_WRITE_DATA;
-					width_8bit_next <= '1';
-					write_enable_next <= not(cpu_WRITE_N) and not(pbi_takeover_adj);
-					write_enable_freezer_next <= not(cpu_WRITE_N);
-					pbi_wr_enable <= not(cpu_WRITE_N) and pbi_takeover_adj;
-					if (pbi_takeover_adj='0' and request_complete = '1') then
-						notify_cpu <= '1';
-					else
-						state_next <= state_waiting_cpu;
-					end if;
-					cpu_fetch_real_next <= '1';
-					antic_fetch_real_next <= '0';
-				when "000" =>
-					-- no requests
-				when others =>
-					-- nop
-				end case;
+				end if;
 			when state_waiting_antic =>
 				notify_antic <= request_complete;
 				if (pbi_release = '1' or request_complete = '1') then
@@ -509,6 +545,16 @@ BEGIN
 				if (pbi_release = '1' or request_complete = '1') then
 					state_next <= state_idle;
 					pbi_cycle_next <= '0';
+				end if;
+			when state_waiting_sample =>
+				SAMPLE_RAM_READY <= request_complete;
+				if (request_complete = '1') then
+					state_next <= state_idle;
+				end if;
+			when state_waiting_sid =>
+				SID_ROM_READY <= request_complete;
+				if (request_complete = '1') then
+					state_next <= state_idle;
 				end if;
 			when others =>
 				-- NOP
@@ -655,6 +701,10 @@ gen_normal_memory : if low_memory=0 generate
 	SDRAM_BASIC_ROM_ADDR <= "111"&"000000"   &"00000000000000";
 	SDRAM_OS_ROM_ADDR    <= "111"&"000001" &"00000000000000";
 	-- SYSTEM        -              "111 1000 0000 0000 0000 0000" (BOT) - LAST 512K
+	-- first 64K taken by the sample engine, then 64K empty
+	-- then 128K of SID frequency and wave data
+	SDRAM_SAMPLE_ADDR <= "1111000"&SAMPLE_RAM_ADDRESS;
+	SDRAM_SID_ADDR <= "111101"&SID_ROM_ADDRESS;
 
 end generate;
 
@@ -708,7 +758,7 @@ end generate;
 		pbi_mpd_n,
 		
 		-- input data from n sources
-		GTIA_DATA,POKEY_DATA,PIA_DATA,ANTIC_DATA,PBI_DATA,ROM_DATA,RAM_DATA,SDRAM_DATA,
+		GTIA_DATA,POKEY_DATA,DRIVE_POKEY_DATA,PIA_DATA,ANTIC_DATA,PBI_DATA,ROM_DATA,RAM_DATA,SDRAM_DATA,
 		CACHE_GTIA_DATA,CACHE_POKEY_DATA,CACHE_ANTIC_DATA,
 		LAST_BUS_REG,
 		
@@ -750,6 +800,7 @@ end generate;
 		
 		GTIA_WR_ENABLE <= '0';
 		POKEY_WR_ENABLE <= '0';
+		POKEY_REQ <= '0';
 		ANTIC_WR_ENABLE <= '0';
 		PIA_WR_ENABLE <= '0';
 		PIA_RD_ENABLE <= '0';
@@ -857,9 +908,13 @@ end generate;
 			
 				-- POKEY
 				when X"D2" =>				
+					POKEY_REQ <= '1';
 					POKEY_WR_ENABLE <= write_enable_next;
-					MEMORY_DATA_INT(7 downto 0) <= POKEY_DATA;
-					MEMORY_DATA_INT(15 downto 8) <= CACHE_POKEY_DATA;
+					MEMORY_DATA_INT(7 downto 0) <= last_bus_reg;
+					if DRIVE_POKEY_DATA = '1' then
+						MEMORY_DATA_INT(7 downto 0) <= POKEY_DATA;
+						MEMORY_DATA_INT(15 downto 8) <= CACHE_POKEY_DATA;
+					end if;
 					request_complete <= '1';
 					sdram_chip_select <= '0';
 					ram_chip_select <= '0';					
