@@ -24,7 +24,8 @@ use IEEE.STD_LOGIC_MISC.ALL;
 
 entity VBXE is
 generic ( 
-	cycle_length : integer := 16 -- Currently unused, but leave just in case
+	cycle_length : integer := 16; -- Currently unused, but leave just in case
+	atmap_bram : boolean := true
 );
 port (
 	clk : in std_logic;
@@ -249,9 +250,6 @@ signal xdl_map_fetch_init_next : unsigned(18 downto 0);
 signal xdl_map_read_count_reg : unsigned(7 downto 0); -- integer range 0 to 172;
 signal xdl_map_read_count_next : unsigned(7 downto 0); -- integer range 0 to 172;
 
-type xdl_map_buffer_type is array(0 to 255) of std_logic_vector(7 downto 0);
-signal xdl_map_buffer : xdl_map_buffer_type;
-
 signal xdl_map_buffer_data_in_reg : std_logic_vector(7 downto 0);
 signal xdl_map_buffer_data_in_next : std_logic_vector(7 downto 0);
 signal xdl_map_buffer_data_out : std_logic_vector(31 downto 0);
@@ -407,20 +405,20 @@ begin
 			end if;
 		end if;
 		if xdl_map_live_reg = '1' then
-			map_pf0 <= xdl_map_buffer_data_out(31 downto 24);
-			map_pf1 <= xdl_map_buffer_data_out(23 downto 16);
-			if (gtia_highres xor xdl_map_buffer_data_out(2)) = '1' then
+			map_pf0 <= xdl_map_buffer_data_out(7 downto 0);
+			map_pf1 <= xdl_map_buffer_data_out(15 downto 8);
+			if (gtia_highres xor xdl_map_buffer_data_out(26)) = '1' then
 				case xdl_map_wd_reg(4 downto 3) is
 				when "00" =>
-				if xdl_map_buffer_data_out(31-to_integer(xdl_map_sindex_reg(2 downto 0))) = '1' then
+				if xdl_map_buffer_data_out(7-to_integer(xdl_map_sindex_reg(2 downto 0))) = '1' then
 					flip_23 := true;
 				end if;
 				when "01" =>
-				if xdl_map_buffer_data_out(31-to_integer(xdl_map_sindex_reg(3 downto 1))) = '1' then
+				if xdl_map_buffer_data_out(7-to_integer(xdl_map_sindex_reg(3 downto 1))) = '1' then
 					flip_23 := true;
 				end if;
 				when others =>
-				if xdl_map_buffer_data_out(31-to_integer(xdl_map_sindex_reg(4 downto 2))) = '1' then
+				if xdl_map_buffer_data_out(7-to_integer(xdl_map_sindex_reg(4 downto 2))) = '1' then
 					flip_23 := true;
 				end if;
 				end case;
@@ -440,24 +438,24 @@ begin
 			if flip_23 then
 				map_pf2 <= gtia_pf3;
 			else
-				map_pf2 <= xdl_map_buffer_data_out(15 downto 8);
-				if (gtia_highres and xdl_map_buffer_data_out(2)) = '1' then
+				map_pf2 <= xdl_map_buffer_data_out(23 downto 16);
+				if (gtia_highres and xdl_map_buffer_data_out(26)) = '1' then
 					gtia_active_hr_mod <= "00";
 					case gtia_active_hr is
 					when "00" =>
-						map_pf2 <= xdl_map_buffer_data_out(31 downto 24);
+						map_pf2 <= xdl_map_buffer_data_out(7 downto 0);
 						gtia_prior_adj(6 downto 4) := "001";
 					when "01" =>
-						map_pf2 <= xdl_map_buffer_data_out(23 downto 16);
+						map_pf2 <= xdl_map_buffer_data_out(15 downto 8);
 						gtia_prior_adj(6 downto 4) := "010";
 					when "10" => null;
 					when "11" => map_pf2 <= gtia_pf3;
 					end case;
 				end if;  
 			end if;
-			xdl_pf_palette <= xdl_map_buffer_data_out(7 downto 6);
-			xdl_ov_palette <= xdl_map_buffer_data_out(5 downto 4);
-			case xdl_map_buffer_data_out(1 downto 0) is
+			xdl_pf_palette <= xdl_map_buffer_data_out(31 downto 30);
+			xdl_ov_palette <= xdl_map_buffer_data_out(29 downto 28);
+			case xdl_map_buffer_data_out(25 downto 24) is
 				when "00" => ov_prior := p0_reg;
 				when "01" => ov_prior := p1_reg;
 				when "10" => ov_prior := p2_reg;
@@ -478,7 +476,7 @@ begin
 			xdl_ov_pixel_active <= not(xdl_ptrans_reg(xdl_pixel_sindex_reg));
 			if xdl_ptrans_reg(xdl_pixel_sindex_reg) = '0' then
 				if colmask_reg(to_integer(unsigned(xdl_pixels_reg(xdl_pixel_sindex_reg)(7 downto 5)))) = '1' then
-					coldetect_next <= coldetect_reg or ((xdl_map_buffer_data_out(3) and xdl_map_active_reg) & gtia_prior_adj(6 downto 0));
+					coldetect_next <= coldetect_reg or ((xdl_map_buffer_data_out(27) and xdl_map_active_reg) & gtia_prior_adj(6 downto 0));
 				end if;
 			end if;
 			if (no_trans_reg = '0') and (trans15_reg = '1') and (xdl_pixels_reg(xdl_pixel_sindex_reg)(3 downto 0) = x"F") then
@@ -959,6 +957,28 @@ begin
 	end if;
 end process;
 
+map_buffer_bram : if atmap_bram generate 
+
+begin
+
+xdl_map_buffer: entity work.dpram_dif
+generic map (addr_width_a => 8, data_width_a => 8, addr_width_b => 6, data_width_b => 32)
+port map (clock => clk,
+	address_a => std_logic_vector(xdl_map_read_count_reg),
+	data_a => xdl_map_buffer_data_in_next,
+	wren_a => xdl_map_buffer_wren,
+	address_b => std_logic_vector(xdl_map_buffer_index_reg),
+	q_b => xdl_map_buffer_data_out);
+
+end generate;
+
+map_buffer_logic: if not(atmap_bram) generate
+
+type xdl_map_buffer_type is array(0 to 255) of std_logic_vector(7 downto 0);
+signal xdl_map_buffer : xdl_map_buffer_type;
+
+begin
+
 process(clk)
 begin
 	if rising_edge(clk) then
@@ -966,13 +986,15 @@ begin
 			xdl_map_buffer(to_integer(xdl_map_read_count_reg)) <= xdl_map_buffer_data_in_next;
 		else
 			xdl_map_buffer_data_out <=
-			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "00")) &
-			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "01")) &
+			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "11")) &
 			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "10")) &
-			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "11"));
+			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "01")) &
+			xdl_map_buffer(to_integer(xdl_map_buffer_index_reg & "00"));
 		end if;
 	end if;
 end process;
+
+end generate;
 
 process(xdl_active_reg, video_clock_antic_lowres, xdl_ov_size_reg, gtia_hpos)
 begin

@@ -885,7 +885,7 @@ PORT MAP(CLK => CLK,
 GTIA_SOUND <= CONSOL_OUT(3);
 
 vbxe_board : entity work.VBXE
-GENERIC MAP ( cycle_length => cycle_length)
+GENERIC MAP (cycle_length => cycle_length, atmap_bram => true)
 PORT MAP(
 	CLK => CLK,
 	ENABLE => VBXE_SWITCH,
