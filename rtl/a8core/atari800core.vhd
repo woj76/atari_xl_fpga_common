@@ -32,6 +32,7 @@ ENTITY atari800core IS
 	(
 		CLK :  IN  STD_LOGIC; -- cycle_length*1.79MHz
 		RESET_N : IN STD_LOGIC;
+		POWER_RESET : IN STD_LOGIC := '0';
 
 		-- VIDEO OUT - PAL/NTSC, original Atari timings approx (may be higher res)
 		VIDEO_VS :  OUT  STD_LOGIC;
@@ -192,7 +193,7 @@ ENTITY atari800core IS
 
 		VBXE_SWITCH : IN STD_LOGIC := '0';
 		VBXE_REG_BASE : IN STD_LOGIC := '0';
-		VBXE_NTSC_FIX : IN STD_LOGIC := '0';
+		VBXE_VER_127 : IN STD_LOGIC := '0';
 		VBXE_TURBO : IN STD_LOGIC := '0';
 		-- Interface for uploading palettes
 		VBXE_PALETTE_RGB : IN STD_LOGIC_VECTOR(2 downto 0) := "000";
@@ -306,7 +307,8 @@ signal GTIA_HIGHRES_IN : std_logic;
 signal GTIA_ACTIVE_HR_OUT : std_logic_vector(1 downto 0);
 signal GTIA_ACTIVE_HR_IN : std_logic_vector(1 downto 0);
 signal GTIA_PRIOR : std_logic_vector(7 downto 0);
-signal GTIA_PRIOR_RAW : std_logic_vector(7 downto 0);
+signal GTIA_PRIOR_IN : std_logic_vector(9 downto 0);
+signal GTIA_PRIOR_RAW : std_logic_vector(9 downto 0);
 signal GTIA_HPOS : std_logic_vector(7 downto 0);
 signal GTIA_PF0_IN : std_logic_vector(7 downto 0);
 signal GTIA_PF1_IN : std_logic_vector(7 downto 0);
@@ -316,7 +318,9 @@ signal GTIA_PF1_OUT : std_logic_vector(7 downto 0);
 signal GTIA_PF2_OUT : std_logic_vector(7 downto 0);
 signal GTIA_PF3_OUT : std_logic_vector(7 downto 0);
 signal VBXE_XCOLOR : std_logic;
-
+signal CLIP_SIDES_GTIA : std_logic;
+signal XCOLOR_GTIA : std_logic;
+ 
 -- VBXE palette
 signal VIDEO_R_VBXE : std_logic_vector(7 downto 0);
 signal VIDEO_G_VBXE : std_logic_vector(7 downto 0);
@@ -837,8 +841,8 @@ PORT MAP(CLK => CLK,
 		 CPU_ENABLE_ORIGINAL => ENABLE_179_MEMWAIT, -- for subsequent pmg fetches
 		 RESET_N => RESET_N,
 		 PAL => PAL,
-		 CLIP_SIDES => GTIA_CLIP_SIDES,
-		 GTIA_XCOLOR => GTIA_XCOLOR,
+		 CLIP_SIDES => CLIP_SIDES_GTIA,
+		 GTIA_XCOLOR => XCOLOR_GTIA,
 		 ENABLE_179 => ANTIC_ENABLE_179,
 		 COLOUR_CLOCK_ORIGINAL => ANTIC_ORIGINAL_COLOUR_CLOCK_OUT,
 		 COLOUR_CLOCK => ANTIC_COLOUR_CLOCK_OUT,
@@ -866,6 +870,7 @@ PORT MAP(CLK => CLK,
 		 GTIA_ACTIVE_HR_OUT => GTIA_ACTIVE_HR_OUT,
 		 GTIA_ACTIVE_HR_IN => GTIA_ACTIVE_HR_IN,
 		 GTIA_PRIOR => GTIA_PRIOR,
+		 GTIA_PRIOR_IN => GTIA_PRIOR_IN,
 		 GTIA_PRIOR_RAW => GTIA_PRIOR_RAW,
 		 GTIA_VSYNC => GTIA_VSYNC,
 		 GTIA_HPOS => GTIA_HPOS,
@@ -885,14 +890,19 @@ PORT MAP(CLK => CLK,
 GTIA_SOUND <= CONSOL_OUT(3);
 
 vbxe_board : entity work.VBXE
-GENERIC MAP (cycle_length => cycle_length, atmap_bram => true)
+GENERIC MAP (cycle_length => cycle_length, atmap_bram => true, palette_path => "a8core/vbxe/")
 PORT MAP(
 	CLK => CLK,
 	ENABLE => VBXE_SWITCH,
-	NTSC_FIX => VBXE_NTSC_FIX,
+	VER_127 => VBXE_VER_127,
 	TURBO => VBXE_TURBO,
+	GTIA_CLIP_IN => GTIA_CLIP_SIDES,
+	GTIA_CLIP_OUT => CLIP_SIDES_GTIA,
+	GTIA_XCOLOR_IN => GTIA_XCOLOR,
+	GTIA_XCOLOR_OUT => XCOLOR_GTIA,
 	ENABLE_179 => ANTIC_ENABLE_179,
 	RESET_N => RESET_N,
+	POWER_RESET => POWER_RESET,
 	SOFT_RESET => VBXE_SOFT_RESET,
 	PAL => PAL,
 	ADDR => PBI_ADDR_INT(4 DOWNTO 0),
@@ -933,6 +943,7 @@ PORT MAP(
 	gtia_active_hr => GTIA_ACTIVE_HR_OUT,
 	gtia_active_hr_mod => GTIA_ACTIVE_HR_IN,
 	gtia_prior => GTIA_PRIOR,
+	gtia_prior_mod => GTIA_PRIOR_IN,
 	gtia_prior_raw => GTIA_PRIOR_RAW,
 	gtia_pf0 => GTIA_PF0_OUT,
 	gtia_pf1 => GTIA_PF1_OUT,
