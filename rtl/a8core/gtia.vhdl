@@ -605,6 +605,8 @@ ARCHITECTURE vhdl OF gtia IS
 	signal gtia_active_hr : std_logic_vector(1 downto 0);
 	signal gtia_highres : std_logic;
 	signal gtia_prior_vbxe : std_logic_vector(9 downto 0);
+
+	signal xcolor : std_logic;
 	
 begin
 	-- register
@@ -1419,13 +1421,15 @@ begin
 	gtia_highres <= GTIA_HIGHRES_IN when colour_clock_vbxe='1' else highres_adj;
 	gtia_active_hr <= GTIA_ACTIVE_HR_IN when colour_clock_vbxe='1' else active_hr_adj;
 	gtia_prior_vbxe <= GTIA_PRIOR_IN when colour_clock_vbxe='1' else gtia_prior_adj;
+	
+	xcolor <= vbxe_xcolor or gtia_xcolor;
 
 	process(set_p0,set_p1,set_p2,set_p3,set_pf0,set_pf1,set_pf2,set_pf3,set_bk,
 			colbk_adj,colpf0_adj,colpf1_adj,colpf2_adj,colpf3_adj,colpm0_adj,colpm1_adj,colpm2_adj,colpm3_adj,
 			colour_clock,colour_reg,
 			highres_adj,gtia_active_hr,gtia_prior_adj,gtia_highres,colour_saved_reg,ov_palette_reg,pf_palette_reg,
 			colour_clock_highres,colour_clock_vbxe,vbxe_pf_palette,vbxe_ov_palette,vbxe_ov_pixel,vbxe_ov_pixel_active,
-			vbxe_xcolor,gtia_xcolor,gtia_pf0,gtia_pf1,gtia_pf2,gtia_prior_reg,
+			vbxe_xcolor,gtia_xcolor,xcolor,gtia_pf0,gtia_pf1,gtia_pf2,gtia_prior_reg,
 			palette_reg,invisible_live_adj,invisible_clip_adj,active_bk_modify_next,active_bk_valid_next,gractl_reg)
 		variable colour : std_logic_vector(7 downto 0);
 	begin
@@ -1441,22 +1445,22 @@ begin
 		if colour_clock_highres = '1' then
 			gtia_prior_next <= set_bk & (set_pf3 or set_pf2) & set_pf1 & set_pf0 & set_p3 & set_p2 & set_p1 & set_p0;
 			colour :=
-				((colbk_adj(7 downto 1)&(vbxe_xcolor and colbk_adj(0)) or active_bk_modify_next) and active_bk_valid_next and repeat(8,set_bk)) or
-				(gtia_pf0(7 downto 1)&(vbxe_xcolor and gtia_pf0(0)) and repeat(8,set_pf0)) or
-				(gtia_pf1(7 downto 1)&(vbxe_xcolor and gtia_pf1(0)) and repeat(8,set_pf1)) or
-				(gtia_pf2(7 downto 1)&(vbxe_xcolor and gtia_pf2(0)) and repeat(8,set_pf2)) or
-				((colpf3_adj(7 downto 1)&(vbxe_xcolor and colpf3_adj(0)) or active_bk_modify_next) and repeat(8,set_pf3)) or
-				(colpm0_adj(7 downto 1)&(vbxe_xcolor and colpm0_adj(0)) and repeat(8,set_p0)) or
-				(colpm1_adj(7 downto 1)&(vbxe_xcolor and colpm1_adj(0)) and repeat(8,set_p1)) or
-				(colpm2_adj(7 downto 1)&(vbxe_xcolor and colpm2_adj(0)) and repeat(8,set_p2)) or
-				(colpm3_adj(7 downto 1)&(vbxe_xcolor and colpm3_adj(0)) and repeat(8,set_p3));
+				((colbk_adj(7 downto 1)&(xcolor and colbk_adj(0)) or active_bk_modify_next) and active_bk_valid_next and repeat(8,set_bk)) or
+				(gtia_pf0(7 downto 1)&(xcolor and gtia_pf0(0)) and repeat(8,set_pf0)) or
+				(gtia_pf1(7 downto 1)&(xcolor and gtia_pf1(0)) and repeat(8,set_pf1)) or
+				(gtia_pf2(7 downto 1)&(xcolor and gtia_pf2(0)) and repeat(8,set_pf2)) or
+				((colpf3_adj(7 downto 1)&(xcolor and colpf3_adj(0)) or active_bk_modify_next) and repeat(8,set_pf3)) or
+				(colpm0_adj(7 downto 1)&(xcolor and colpm0_adj(0)) and repeat(8,set_p0)) or
+				(colpm1_adj(7 downto 1)&(xcolor and colpm1_adj(0)) and repeat(8,set_p1)) or
+				(colpm2_adj(7 downto 1)&(xcolor and colpm2_adj(0)) and repeat(8,set_p2)) or
+				(colpm3_adj(7 downto 1)&(xcolor and colpm3_adj(0)) and repeat(8,set_p3));
 			colour_next <= colour;
 			colour_saved_next <= colour;
 
 			-- high-res mode overrides the luma, unless VBXE xcolor fixed that already
 			if (vbxe_xcolor = '0') and (gtia_highres = '1') and (gtia_active_hr(to_integer(unsigned'('0' & colour_clock))) = '1') and (set_bk = '0') then
-				colour_next(3 downto 0) <= gtia_pf1(3 downto 1)&(vbxe_xcolor and gtia_pf1(0));
-				colour_saved_next(3 downto 0) <= gtia_pf1(3 downto 1)&(vbxe_xcolor and gtia_pf1(0));
+				colour_next(3 downto 0) <= gtia_pf1(3 downto 1)&(xcolor and gtia_pf1(0));
+				colour_saved_next(3 downto 0) <= gtia_pf1(3 downto 1)&(xcolor and gtia_pf1(0));
 				if (gtia_xcolor or gractl_reg(4)) = '1' then 
 					colour_next(7 downto 4) <= gtia_pf1(7 downto 4);
 					colour_saved_next(7 downto 4) <= gtia_pf1(7 downto 4);
