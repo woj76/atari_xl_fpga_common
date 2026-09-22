@@ -480,7 +480,7 @@ PORT MAP(CLK => CLK,
 NMI_n <= ANTIC_NMI_n and EXT_NMI_N and FREEZER_TRIGGER_NMI_N;
 
 pokeym : entity work.pokeymax
-GENERIC MAP(cycle_length => cycle_length)
+GENERIC MAP(cycle_length => cycle_length, version => "31MegaXE")
 PORT MAP(CLK => CLK,
         RESET_N => RESET_N,
         ENABLE_179 => ANTIC_ENABLE_179,
