@@ -321,8 +321,6 @@ atari800xl : entity work.atari800core
 		video_bits => video_bits,
 		palette => palette,
 		low_memory => low_memory,
-		stereo => stereo,
-		covox => covox,
 		internal_ram => internal_ram
 	)
 	PORT MAP

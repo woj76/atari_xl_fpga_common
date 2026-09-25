@@ -294,7 +294,7 @@ PORT MAP(CLK => CLK,
 		 DATA_OUT => ANTIC_DO,
 		 dma_address_out => ANTIC_ADDR);
 
-pokey_mixer : entity work.pokey_mixer_mux
+pokey_mixer : entity work.pokey_mixer_mux_old
 PORT MAP(CLK => CLK,
 		 ENABLE_179 => ENABLE_179_MEMWAIT,
 		 GTIA_SOUND => '0',

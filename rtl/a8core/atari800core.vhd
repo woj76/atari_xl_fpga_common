@@ -65,8 +65,8 @@ ENTITY atari800core IS
 		PORTB_OUT : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
 		PORTB_DIR_OUT : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
 
-		POKEYMAX_CONFIG : IN STD_LOGIC_VECTOR(38 DOWNTO 0);
-		PM_COVOX_D6_MIRROR : IN STD_LOGIC;
+		POKEYMAX_CONFIG : IN STD_LOGIC_VECTOR(38 DOWNTO 0) := (others => '0');
+		PM_COVOX_D6_MIRROR : IN STD_LOGIC := '0';
 
 		-- Pokey keyboard matrix
 		-- Standard component available to connect this to PS2

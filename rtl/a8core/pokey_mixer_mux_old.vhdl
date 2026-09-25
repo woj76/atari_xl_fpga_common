@@ -10,7 +10,7 @@ USE ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use IEEE.STD_LOGIC_MISC.all;
 
-ENTITY pokey_mixer_mux IS
+ENTITY pokey_mixer_mux_old IS
 PORT 
 ( 
 	CLK : IN STD_LOGIC;
@@ -39,9 +39,9 @@ PORT
 	VOLUME_OUT_L : OUT STD_LOGIC_vector(15 downto 0);
 	VOLUME_OUT_R : OUT STD_LOGIC_vector(15 downto 0)
 );
-END pokey_mixer_mux;
+END pokey_mixer_mux_old;
 
-ARCHITECTURE vhdl OF pokey_mixer_mux IS
+ARCHITECTURE vhdl OF pokey_mixer_mux_old IS
 	signal LEFT_CHANNEL_NEXT : STD_LOGIC;
 	signal LEFT_CHANNEL_REG : STD_LOGIC;
 
@@ -160,7 +160,7 @@ filter_left : entity work.simple_low_pass_filter
 	port map
 	(
 		CLK => CLK,
-		AUDIO_IN => VOLUME_OUT_L_REG,
+		AUDIO_IN => unsigned(VOLUME_OUT_L_REG),
 		SAMPLE_IN => ENABLE_179,
 		AUDIO_OUT => VOLUME_POSTLOWPASS_L_REG
 	);
@@ -168,7 +168,7 @@ filter_right : entity work.simple_low_pass_filter
 	port map
 	(
 		CLK => CLK,
-		AUDIO_IN => VOLUME_OUT_R_REG,
+		AUDIO_IN => unsigned(VOLUME_OUT_R_REG),
 		SAMPLE_IN => ENABLE_179,
 		AUDIO_OUT => VOLUME_POSTLOWPASS_R_REG
 	);

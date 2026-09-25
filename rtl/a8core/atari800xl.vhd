@@ -240,7 +240,7 @@ PORT MAP(CLK => CLK,
 		 DATA_OUT => ANTIC_DO,
 		 dma_address_out => ANTIC_ADDR);
 
-pokey_mixer_both : entity work.pokey_mixer_mux
+pokey_mixer_both : entity work.pokey_mixer_mux_old
 PORT MAP(CLK => CLK,
 		 GTIA_SOUND => GTIA_SOUND,
 		 SIO_AUDIO => SIO_AUDIO,
