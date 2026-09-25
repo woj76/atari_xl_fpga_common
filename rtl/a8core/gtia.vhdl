@@ -47,7 +47,7 @@ PORT
 	DATA_OUT : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
 	
 	-- TO scandoubler...
-	COLOUR_out : out std_logic_vector(7 downto 0);
+	GTIA_COLOUR_OUT : out std_logic_vector(7 downto 0);
 	
 	VSYNC : out std_logic;
 	HSYNC : out std_logic;
@@ -81,7 +81,8 @@ PORT
 	VBXE_OV_PIXEL : in std_logic_vector(7 downto 0) := (others => '0');
 	VBXE_OV_PIXEL_ACTIVE : in std_logic := '0';
 
-	VBXE_PALETTE_OUT : out std_logic_vector(1 downto 0)
+	VBXE_PALETTE_OUT : out std_logic_vector(1 downto 0);
+	VBXE_COLOUR_OUT : out std_logic_vector(7 downto 0)
 );
 END gtia;
 
@@ -425,6 +426,8 @@ ARCHITECTURE vhdl OF gtia IS
 	signal COLOUR_REG : std_logic_vector(7 downto 0);
 	signal COLOUR_SAVED_NEXT : std_logic_vector(7 downto 0);
 	signal COLOUR_SAVED_REG : std_logic_vector(7 downto 0);
+	signal GTIA_COLOUR_NEXT : std_logic_vector(7 downto 0);
+	signal GTIA_COLOUR_REG : std_logic_vector(7 downto 0);
 	
 	-- VBXE output
 	signal PALETTE_NEXT : std_logic_vector(1 downto 0);
@@ -607,7 +610,8 @@ ARCHITECTURE vhdl OF gtia IS
 	signal gtia_prior_vbxe : std_logic_vector(9 downto 0);
 
 	signal xcolor : std_logic;
-	
+	signal gtia_reg_xcolor : std_logic;
+
 begin
 	-- register
 	process(clk,reset_n)
@@ -659,6 +663,7 @@ begin
 			
 			COLOUR_REG <= (OTHERS=>'0');
 			COLOUR_SAVED_REG <= (OTHERS=>'0');
+			GTIA_COLOUR_REG <= (OTHERS=>'0');
 
 			PALETTE_REG <= (OTHERS=>'0');
 			OV_PALETTE_REG <= (OTHERS=>'0');
@@ -780,6 +785,7 @@ begin
 
 			COLOUR_REG <= colour_next;
 			COLOUR_SAVED_REG <= colour_saved_next;
+			GTIA_COLOUR_REG <= gtia_colour_next;
 
 			PALETTE_REG <= PALETTE_NEXT;
 			OV_PALETTE_REG <= OV_PALETTE_NEXT;
@@ -1423,14 +1429,16 @@ begin
 	gtia_prior_vbxe <= GTIA_PRIOR_IN when colour_clock_vbxe='1' else gtia_prior_adj;
 	
 	xcolor <= vbxe_xcolor or gtia_xcolor;
+	gtia_reg_xcolor <= gtia_xcolor or gractl_reg(4);
 
+	-- VBXE colour
 	process(set_p0,set_p1,set_p2,set_p3,set_pf0,set_pf1,set_pf2,set_pf3,set_bk,
 			colbk_adj,colpf0_adj,colpf1_adj,colpf2_adj,colpf3_adj,colpm0_adj,colpm1_adj,colpm2_adj,colpm3_adj,
 			colour_clock,colour_reg,
 			highres_adj,gtia_active_hr,gtia_prior_adj,gtia_highres,colour_saved_reg,ov_palette_reg,pf_palette_reg,
 			colour_clock_highres,colour_clock_vbxe,vbxe_pf_palette,vbxe_ov_palette,vbxe_ov_pixel,vbxe_ov_pixel_active,
 			vbxe_xcolor,gtia_xcolor,xcolor,gtia_pf0,gtia_pf1,gtia_pf2,gtia_prior_reg,
-			palette_reg,invisible_live_adj,invisible_clip_adj,active_bk_modify_next,active_bk_valid_next,gractl_reg)
+			palette_reg,invisible_live_adj,invisible_clip_adj,active_bk_modify_next,active_bk_valid_next,gtia_reg_xcolor)
 		variable colour : std_logic_vector(7 downto 0);
 	begin
 
@@ -1461,12 +1469,12 @@ begin
 			if (vbxe_xcolor = '0') and (gtia_highres = '1') and (gtia_active_hr(to_integer(unsigned'('0' & colour_clock))) = '1') and (set_bk = '0') then
 				colour_next(3 downto 0) <= gtia_pf1(3 downto 1)&(xcolor and gtia_pf1(0));
 				colour_saved_next(3 downto 0) <= gtia_pf1(3 downto 1)&(xcolor and gtia_pf1(0));
-				if (gtia_xcolor or gractl_reg(4)) = '1' then 
+				if gtia_reg_xcolor = '1' then
 					colour_next(7 downto 4) <= gtia_pf1(7 downto 4);
 					colour_saved_next(7 downto 4) <= gtia_pf1(7 downto 4);
 				end if;
 			end if;
-                        
+
 			if (invisible_clip_adj or invisible_live_adj) = '1' then
 				colour_saved_next <= X"00";
 				colour_next <= X"00";
@@ -1493,6 +1501,42 @@ begin
 				end if;
 			end if;
 		end if;
+	end process;
+
+	-- GTIA colour
+	process(set_p0_gtia,set_p1_gtia,set_p2_gtia,set_p3_gtia,set_pf0_gtia,set_pf1_gtia,set_pf2_gtia,set_pf3_gtia,set_bk_gtia,
+			colbk_adj,colpf0_adj,colpf1_adj,colpf2_adj,colpf3_adj,colpm0_adj,colpm1_adj,colpm2_adj,colpm3_adj,
+			highres_adj,active_hr_adj,gtia_colour_reg,colour_clock,colour_clock_highres,gtia_reg_xcolor,
+			invisible_live_adj,invisible_clip_adj,active_bk_modify_next,active_bk_valid_next)
+	begin
+
+		gtia_colour_next <= gtia_colour_reg;
+
+		if colour_clock_highres = '1' then
+			gtia_colour_next <=
+				((colbk_adj(7 downto 1)&(gtia_reg_xcolor and colbk_adj(0)) or active_bk_modify_next) and active_bk_valid_next and repeat(8,set_bk_gtia)) or
+				(colpf0_adj(7 downto 1)&(gtia_reg_xcolor and colpf0_adj(0)) and repeat(8,set_pf0_gtia)) or
+				(colpf1_adj(7 downto 1)&(gtia_reg_xcolor and colpf1_adj(0)) and repeat(8,set_pf1_gtia)) or
+				(colpf2_adj(7 downto 1)&(gtia_reg_xcolor and colpf2_adj(0)) and repeat(8,set_pf2_gtia)) or
+				((colpf3_adj(7 downto 1)&(gtia_reg_xcolor and colpf3_adj(0)) or active_bk_modify_next) and repeat(8,set_pf3_gtia)) or
+				(colpm0_adj(7 downto 1)&(gtia_reg_xcolor and colpm0_adj(0)) and repeat(8,set_p0_gtia)) or
+				(colpm1_adj(7 downto 1)&(gtia_reg_xcolor and colpm1_adj(0)) and repeat(8,set_p1_gtia)) or
+				(colpm2_adj(7 downto 1)&(gtia_reg_xcolor and colpm2_adj(0)) and repeat(8,set_p2_gtia)) or
+				(colpm3_adj(7 downto 1)&(gtia_reg_xcolor and colpm3_adj(0)) and repeat(8,set_p3_gtia));
+
+			-- high-res mode overrides the luma
+			if (highres_adj = '1') and (active_hr_adj(to_integer(unsigned'('0' & colour_clock))) = '1') and (set_bk_gtia = '0') then
+				gtia_colour_next(3 downto 0) <= colpf1_adj(3 downto 1)&(gtia_reg_xcolor and colpf1_adj(0));
+				if gtia_reg_xcolor = '1' then
+					gtia_colour_next(7 downto 4) <= colpf1_adj(7 downto 4);
+				end if;
+			end if;
+
+			if (invisible_clip_adj or invisible_live_adj) = '1' then
+				gtia_colour_next <= X"00";
+			end if;
+		end if;
+
 	end process;
 
 	-- collision detection
@@ -2061,7 +2105,8 @@ begin
 	end process;
 	
 	-- output	
-	colour_out <= colour_reg;
+	vbxe_colour_out <= colour_reg;
+	gtia_colour_out <= gtia_colour_reg;
 	
 	vsync<=vsync_reg;
 	hsync<=hsync_reg;

@@ -19,8 +19,6 @@ ENTITY atari5200core IS
 	GENERIC
 	(
 		cycle_length : integer := 16; -- or 32...
-		video_bits : integer := 8;
-		palette : integer :=0; -- 0:gtia colour on VIDEO_B, 1:on
 		low_memory : integer := 0; -- 0:8MB memory map, 1:1MB memory map
 		internal_ram : integer := 0
 	);
@@ -33,9 +31,10 @@ ENTITY atari5200core IS
 		VIDEO_VS :  OUT  STD_LOGIC;
 		VIDEO_HS :  OUT  STD_LOGIC;
 		VIDEO_CS :  OUT  STD_LOGIC;
-		VIDEO_B :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_G :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_R :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
+		VIDEO_B :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_G :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_R :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		GTIA_COLOUR :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
 		VIDEO_BLANK : out std_logic;
 		VIDEO_BURST : out std_logic;
 		VIDEO_START_OF_FIELD : out std_logic;
@@ -185,11 +184,6 @@ SIGNAL	CACHE_GTIA_DO :  STD_LOGIC_VECTOR(7 DOWNTO 0);
 SIGNAL	GTIA_WRITE_ENABLE :  STD_LOGIC;
 
 signal COLOUR : std_logic_vector(7 downto 0);
-
--- GTIA PALETTE
-signal VIDEO_R_WIDE : std_logic_vector(7 downto 0);
-signal VIDEO_G_WIDE : std_logic_vector(7 downto 0);
-signal VIDEO_B_WIDE : std_logic_vector(7 downto 0);
 
 -- CPU
 SIGNAL	CPU_6502_RESET :  STD_LOGIC;
@@ -438,25 +432,15 @@ PORT MAP(CLK => CLK,
 		 BURST => VIDEO_BURST,
 		 START_OF_FIELD => VIDEO_START_OF_FIELD,
 		 ODD_LINE => VIDEO_ODD_LINE,
-		 COLOUR_out => COLOUR,
+		 GTIA_COLOUR_out => COLOUR,
 		 DATA_OUT => GTIA_DO);
 
 	-- colour palette
 
-gen_palette_none : if palette=0 generate
-	VIDEO_B_WIDE <= COLOUR;
-	VIDEO_R_WIDE <= (others => '0');
-	VIDEO_G_WIDE <= (others => '0');
-end generate;
+GTIA_COLOUR <= COLOUR;
 
-gen_palette_on : if palette=1 generate
-	palette4 : entity work.gtia_palette
-		port map (PAL=>'0', ATARI_COLOUR=>COLOUR, R_next=>VIDEO_R_WIDE, G_next=>VIDEO_G_WIDE, B_next=>VIDEO_B_WIDE);		
-end generate;
-
-VIDEO_R(video_bits-1 downto 0) <= VIDEO_R_WIDE(7 downto 8-video_bits);
-VIDEO_G(video_bits-1 downto 0) <= VIDEO_G_WIDE(7 downto 8-video_bits);
-VIDEO_B(video_bits-1 downto 0) <= VIDEO_B_WIDE(7 downto 8-video_bits);
+palette4 : entity work.gtia_palette
+	port map (PAL=>'0', ATARI_COLOUR=>COLOUR, R_next=>VIDEO_R, G_next=>VIDEO_G, B_next=>VIDEO_B);
 
 -- Combine irq - only one here!
 IRQ_n <= POKEY_IRQ;

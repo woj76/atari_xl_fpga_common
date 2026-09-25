@@ -29,7 +29,9 @@ PORT
 	
 	-- GTIA interface
 	pal : in std_logic;
-	colour_in : in std_logic_vector(7 downto 0);
+	colour_in_r : in std_logic_vector(7 downto 0);
+	colour_in_g : in std_logic_vector(7 downto 0);
+	colour_in_b : in std_logic_vector(7 downto 0);
 	vsync_in : in std_logic;
 	hsync_in : in std_logic;
 	csync_in : in std_logic;
@@ -69,11 +71,22 @@ ARCHITECTURE vhdl OF scandoubler IS
 		
 		DATA_OUT : OUT STD_LOGIC
 	);
-	END component;	
-	
-	signal colour_next : std_logic_vector(7 downto 0);
-	signal colour_reg : std_logic_vector(7 downto 0);
-	
+	END component;
+
+	component wide_delay_line IS
+	generic(COUNT : natural := 1; WIDTH : natural :=1);
+	PORT
+	(
+		CLK : IN STD_LOGIC;
+		SYNC_RESET : IN STD_LOGIC;
+		DATA_IN : IN STD_LOGIC_VECTOR(WIDTH-1 downto 0);
+		ENABLE : IN STD_LOGIC;
+		RESET_N : IN STD_LOGIC;
+
+		DATA_OUT : OUT STD_LOGIC_VECTOR(WIDTH-1 downto 0)
+	);
+	END component;
+
 	signal vsync_next : std_logic;
 	signal vsync_reg : std_logic;
 	
@@ -90,13 +103,17 @@ ARCHITECTURE vhdl OF scandoubler IS
 	signal linea_address : std_logic_vector(10 downto 0);
 	signal linea_address_integer : integer;
 	signal linea_write_enable : std_logic;
-	signal linea_out : std_logic_vector(7 downto 0);
+	signal linea_out_r : std_logic_vector(7 downto 0);
+	signal linea_out_g : std_logic_vector(7 downto 0);
+	signal linea_out_b : std_logic_vector(7 downto 0);
 
 	signal lineb_address : std_logic_vector(10 downto 0);
 	signal lineb_address_integer : integer;
 	signal lineb_write_enable : std_logic;
-	signal lineb_out : std_logic_vector(7 downto 0);
-	
+	signal lineb_out_r : std_logic_vector(7 downto 0);
+	signal lineb_out_g : std_logic_vector(7 downto 0);
+	signal lineb_out_b : std_logic_vector(7 downto 0);
+
 	signal input_address_next : std_logic_vector(10 downto 0);
 	signal input_address_reg : std_logic_vector(10 downto 0);
 
@@ -126,7 +143,6 @@ begin
 			r_reg <= (others=>'0');
 			g_reg <= (others=>'0');
 			b_reg <= (others=>'0');			
-			colour_reg <= (others=>'0');
 			hsync_reg <= '0';
 			vsync_reg <= '0';
 			
@@ -142,7 +158,6 @@ begin
 			r_reg <= r_next;
 			g_reg <= g_next;
 			b_reg <= b_next;
-			colour_reg <= colour_next;
 			hsync_reg <= hsync_next;
 			vsync_reg <= vsync_next;
 		
@@ -169,13 +184,25 @@ begin
 	--	port map (clk=>clk,addr=>lineb_address,wr_en=>lineb_write_enable,data_in=>colour_in,data_out=>lineb_out);	
 
 	linea_address_integer <= to_integer(unsigned(linea_address));
-	linea : scandouble_ram_infer
-	port map (clock=>clk,address=>linea_address_integer,we=>linea_write_enable,data=>colour_in,q=>linea_out);
+	linea_r : scandouble_ram_infer
+	port map (clock=>clk,address=>linea_address_integer,we=>linea_write_enable,data=>colour_in_r,q=>linea_out_r);
+
+	linea_g : scandouble_ram_infer
+	port map (clock=>clk,address=>linea_address_integer,we=>linea_write_enable,data=>colour_in_g,q=>linea_out_g);
+
+	linea_b : scandouble_ram_infer
+	port map (clock=>clk,address=>linea_address_integer,we=>linea_write_enable,data=>colour_in_b,q=>linea_out_b);
 
 	lineb_address_integer <= to_integer(unsigned(lineb_address));
-	lineb : scandouble_ram_infer
-	port map (clock=>clk,address=>lineb_address_integer,we=>lineb_write_enable,data=>colour_in,q=>lineb_out);	
-	
+	lineb_r : scandouble_ram_infer
+	port map (clock=>clk,address=>lineb_address_integer,we=>lineb_write_enable,data=>colour_in_r,q=>lineb_out_r);
+
+	lineb_g : scandouble_ram_infer
+	port map (clock=>clk,address=>lineb_address_integer,we=>lineb_write_enable,data=>colour_in_g,q=>lineb_out_g);
+
+	lineb_b : scandouble_ram_infer
+	port map (clock=>clk,address=>lineb_address_integer,we=>lineb_write_enable,data=>colour_in_b,q=>lineb_out_b);
+
 	-- capture
 	process(input_address_reg,colour_enable,hsync_in,hsync_in_reg,buffer_select_reg)
 	begin
@@ -236,15 +263,19 @@ begin
 		port map(clk=>clk,sync_reset=>'0',data_in=>vga_hsync_start,enable=>doubled_enable,reset_n=>reset_n,data_out=>vga_hsync_end);			
 	
 	-- display
-	process(colour_reg,vsync_reg,vga_hsync_reg,hsync_reg,colour_in,csync_in,vsync_in,hsync_in,colour_enable,doubled_enable,vga,composite_on_hsync,buffer_select_reg,linea_out,lineb_out, scanlines_on, vga_odd_reg)
+	process(R_reg,G_reg,B_reg,vsync_reg,vga_hsync_reg,hsync_reg,colour_in_r,colour_in_g,colour_in_b,csync_in,vsync_in,hsync_in,colour_enable,doubled_enable,vga,composite_on_hsync,buffer_select_reg,linea_out_r,linea_out_g,linea_out_b,lineb_out_r,lineb_out_g,lineb_out_b, scanlines_on, vga_odd_reg)
 	begin	
-		colour_next <= colour_reg;
+		R_next <= R_reg;
+		G_next <= G_reg;
+		B_next <= B_reg;
 		vsync_next <= vsync_reg;
 		hsync_next <= hsync_reg;
 		
 		if (vga = '0') then
 			-- non-vga mode - pass through
-			colour_next <= colour_in;
+			R_next <= colour_in_r;
+			G_next <= colour_in_g;
+			B_next <= colour_in_b;
 			--hsync_next <= not(hsync_in or vsync_in);
 			if (composite_on_hsync = '1') then
 				--hsync_next <= not(hsync_in xor vsync_in);
@@ -258,19 +289,23 @@ begin
 			-- vga mode, store all inputs - then play back!			
 			if (buffer_select_reg = '0') then
 				if (scanlines_on ='1' and vga_odd_reg='1') then
-					colour_next(7 downto 4) <= linea_out(7 downto 4);
-					colour_next(3) <= '0';
-					colour_next(2 downto 0) <= linea_out(3 downto 1);
+					R_next <= "00"&linea_out_r(7 downto 2);
+					G_next <= "00"&linea_out_g(7 downto 2);
+					B_next <= "00"&linea_out_b(7 downto 2);
 				else
-					colour_next <= linea_out;
+					R_next <= linea_out_r;
+					G_next <= linea_out_g;
+					B_next <= linea_out_b;
 				end if;
 			else
 				if (scanlines_on ='1' and vga_odd_reg='1') then
-					colour_next(7 downto 4) <= lineb_out(7 downto 4);
-					colour_next(3) <= '0';
-					colour_next(2 downto 0) <= lineb_out(3 downto 1);
+					R_next <= "00"&lineb_out_r(7 downto 2);
+					G_next <= "00"&lineb_out_g(7 downto 2);
+					B_next <= "00"&lineb_out_b(7 downto 2);
 				else
-					colour_next <= lineb_out;
+					R_next <= lineb_out_r;
+					G_next <= lineb_out_g;
+					B_next <= lineb_out_b;
 				end if;
 			end if;
 			
@@ -285,16 +320,27 @@ begin
 		end if;
 	end process;
 
-	-- colour palette
-	palette4 : entity work.gtia_palette
-		port map (PAL=>pal,ATARI_COLOUR=>colour_reg, R_next=>R_next, G_next=>G_next, B_next=>B_next);		
-	
 	-- output	
 		-- TODO - for DE2, output full 8 bits
+
+	-- TODO The delays imitate the exact timing from the previous (non-RGB) version, 
+	-- but it seems they are not necessary, at least not for VGA...?
+--	R_delay : wide_delay_line
+--		generic map (COUNT=>1,WIDTH=>video_bits)
+--		port map(clk=>clk,sync_reset=>'0',data_in=>R_reg(7 downto 8-video_bits),enable=>'1',reset_n=>reset_n,data_out=>R);
+
+--	G_delay : wide_delay_line
+--		generic map (COUNT=>1,WIDTH=>video_bits)
+--		port map(clk=>clk,sync_reset=>'0',data_in=>G_reg(7 downto 8-video_bits),enable=>'1',reset_n=>reset_n,data_out=>G);
+
+--	B_delay : wide_delay_line
+--		generic map (COUNT=>1,WIDTH=>video_bits)
+--		port map(clk=>clk,sync_reset=>'0',data_in=>B_reg(7 downto 8-video_bits),enable=>'1',reset_n=>reset_n,data_out=>B);
+
 	R <= R_reg(7 downto 8-video_bits);
 	G <= G_reg(7 downto 8-video_bits);
 	B <= B_reg(7 downto 8-video_bits);
-	
+
 	vsync<=vsync_reg;
 	hsync<=hsync_reg;
 

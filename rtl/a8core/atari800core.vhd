@@ -19,8 +19,6 @@ ENTITY atari800core IS
 	GENERIC
 	(
 		cycle_length : integer := 16; -- or 32...
-		video_bits : integer := 8;
-		palette : integer :=0; -- 0:gtia colour on VIDEO_B, 1:on
 		low_memory : integer := 0; -- 0:8MB memory map, 1:1MB memory map
 		stereo : integer := 1;
 		sid : integer := 0; -- 0(none),1(on, only when stereo enabled too)
@@ -38,9 +36,10 @@ ENTITY atari800core IS
 		VIDEO_VS :  OUT  STD_LOGIC;
 		VIDEO_HS :  OUT  STD_LOGIC;
 		VIDEO_CS :  OUT  STD_LOGIC;
-		VIDEO_B :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_G :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_R :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
+		VIDEO_B :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_G :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_R :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		GTIA_COLOUR : OUT STD_LOGIC_VECTOR(7 downto 0);
 		VIDEO_BLANK : out std_logic;
 		VIDEO_BURST : out std_logic;
 		VIDEO_START_OF_FIELD : out std_logic;
@@ -275,7 +274,7 @@ SIGNAL	GTIA_DO :  STD_LOGIC_VECTOR(7 DOWNTO 0);
 SIGNAL	CACHE_GTIA_DO :  STD_LOGIC_VECTOR(7 DOWNTO 0);
 SIGNAL	GTIA_WRITE_ENABLE :  STD_LOGIC;
 
-signal COLOUR : std_logic_vector(7 downto 0);
+signal VBXE_COLOUR : std_logic_vector(7 downto 0);
 
 -- GTIA PALETTE
 signal VIDEO_R_GTIA : std_logic_vector(7 downto 0);
@@ -861,7 +860,8 @@ PORT MAP(CLK => CLK,
 		 BURST => VIDEO_BURST,
 		 START_OF_FIELD => VIDEO_START_OF_FIELD,
 		 ODD_LINE => VIDEO_ODD_LINE,
-		 COLOUR_out => COLOUR,
+		 VBXE_COLOUR_OUT => VBXE_COLOUR,
+		 GTIA_COLOUR_OUT => GTIA_COLOUR,
 		 DATA_OUT => GTIA_DO,
 		 COLOUR_CLOCK_VBXE => VBXE_SWITCH and ANTIC_VBXE_COLOUR_CLOCK_OUT,
 		 VBXE_XCOLOR => VBXE_XCOLOR,
@@ -909,7 +909,7 @@ PORT MAP(
 	DATA_IN => WRITE_DATA(7 DOWNTO 0),
 	WR_EN => VBXE_WRITE_ENABLE,
 	DATA_OUT => VBXE_DO,
-	PALETTE_GET_COLOR => COLOUR,
+	PALETTE_GET_COLOR => VBXE_COLOUR,
 	PALETTE_GET_INDEX => VBXE_PALETTE,
 	R_OUT => VIDEO_R_VBXE,
 	G_OUT => VIDEO_G_VBXE,
@@ -960,22 +960,12 @@ PORT MAP(
 	VSYNC => GTIA_VSYNC,
 	GTIA_HPOS => GTIA_HPOS);
 
-	-- colour palette
+palette4 : entity work.gtia_palette
+	port map (PAL=>PAL, ATARI_COLOUR=>VBXE_COLOUR, R_next=>VIDEO_R_GTIA, G_next=>VIDEO_G_GTIA, B_next=>VIDEO_B_GTIA);
 
-gen_palette_none : if palette=0 generate
-	VIDEO_B_GTIA <= COLOUR;
-	VIDEO_R_GTIA <= (others => '0');
-	VIDEO_G_GTIA <= (others => '0');
-end generate;
-
-gen_palette_on : if palette=1 generate
-	palette4 : entity work.gtia_palette
-		port map (PAL=>PAL, ATARI_COLOUR=>COLOUR, R_next=>VIDEO_R_GTIA, G_next=>VIDEO_G_GTIA, B_next=>VIDEO_B_GTIA);		
-end generate;
-
-VIDEO_R(video_bits-1 downto 0) <= VIDEO_R_VBXE(7 downto 8-video_bits) when VBXE_SWITCH = '1' else VIDEO_R_GTIA(7 downto 8-video_bits);
-VIDEO_G(video_bits-1 downto 0) <= VIDEO_G_VBXE(7 downto 8-video_bits) when VBXE_SWITCH = '1' else VIDEO_G_GTIA(7 downto 8-video_bits);
-VIDEO_B(video_bits-1 downto 0) <= VIDEO_B_VBXE(7 downto 8-video_bits) when VBXE_SWITCH = '1' else VIDEO_B_GTIA(7 downto 8-video_bits);
+VIDEO_R <= VIDEO_R_VBXE when VBXE_SWITCH = '1' else VIDEO_R_GTIA;
+VIDEO_G <= VIDEO_G_VBXE when VBXE_SWITCH = '1' else VIDEO_G_GTIA;
+VIDEO_B <= VIDEO_B_VBXE when VBXE_SWITCH = '1' else VIDEO_B_GTIA;
 
 irq_glue1 : entity work.irq_glue
 PORT MAP(pokey_irq => POKEY_IRQ,
