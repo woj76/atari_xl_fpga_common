@@ -26,10 +26,6 @@ ENTITY atari800core_simple_sdram is
 		-- I've tested 16 and 32 only, but 4 and 8 might work...
 		cycle_length : integer := 16; -- or 32...
 
-		-- how many bits for video
-		video_bits : integer := 8;
-		palette : integer :=1; -- 0:gtia colour on VIDEO_B, 1:altirra, 2:laoo
-	
 		-- For initial port may help to have no
 		internal_rom : integer := 1;  -- if 0 expects it in sdram,is 1:16k os+basic, is 2:... TODO
 		internal_ram : integer := 16384;  -- at start of memory map
@@ -52,9 +48,9 @@ ENTITY atari800core_simple_sdram is
 		VIDEO_VS :  OUT  STD_LOGIC;
 		VIDEO_HS :  OUT  STD_LOGIC;
 		VIDEO_CS :  OUT  STD_LOGIC;
-		VIDEO_B :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_G :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
-		VIDEO_R :  OUT  STD_LOGIC_VECTOR(video_bits-1 DOWNTO 0);
+		VIDEO_B :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_G :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		VIDEO_R :  OUT  STD_LOGIC_VECTOR(7 DOWNTO 0);
 			-- These ones are probably only needed for e.g. svideo
 		VIDEO_BLANK : out std_logic;
 		VIDEO_BURST : out std_logic;
@@ -318,8 +314,6 @@ atari800xl : entity work.atari800core
 	GENERIC MAP
 	(
 		cycle_length => cycle_length,
-		video_bits => video_bits,
-		palette => palette,
 		low_memory => low_memory,
 		internal_ram => internal_ram
 	)
