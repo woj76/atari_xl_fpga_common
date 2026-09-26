@@ -211,8 +211,14 @@ ARCHITECTURE vhdl OF address_decoder IS
 	signal extended_self_test : std_logic;
 	signal extended_bank : std_logic_vector(8 downto 0); -- ONLY "000" - "103" valid...
 
+	signal basic_next : std_logic;
+	signal basic_reg : std_logic;
+	signal basic_latched_when_banking : std_logic;
+
 	signal ram_c000 : std_logic;
 	signal has_ram : std_logic;
+	signal axlon_bank_reg : std_logic_vector(7 downto 0);
+	signal axlon_bank_next : std_logic_vector(7 downto 0);
 	
 	-- even though we have 3 targets (flash, ram, rom) and 3 masters, only allow access to one a a time - simpler.
 	signal state_next : std_logic_vector(2 downto 0);
@@ -265,6 +271,8 @@ ARCHITECTURE vhdl OF address_decoder IS
 	signal emu_cart_cctl_dout_enable: boolean;
 
 	signal atari_clk_enable: std_logic;
+	signal atari_dma_access : std_logic;
+	signal atari_with_dma_clk_enable : std_logic;
 	signal freezer_disable_atari: boolean;
 	signal freezer_access_type: std_logic_vector(1 downto 0);
 	signal freezer_access_address: std_logic_vector(16 downto 0);
@@ -299,7 +307,11 @@ BEGIN
 			pbi_cycle_reg <= '0';
 
 			last_bus_reg <= (others=>'0');
-	elsif (clk'event and clk='1') then
+
+			axlon_bank_reg <= (others=>'0');
+			basic_reg <= '0';
+
+		elsif (clk'event and clk='1') then
 			addr_reg <= addr_next;
 			state_reg <= state_next;
 			width_8bit_reg <= width_8bit_next;
@@ -315,10 +327,15 @@ BEGIN
 			pbi_cycle_reg <= pbi_cycle_next;
 
 			last_bus_reg <= last_bus_next;
+
+			axlon_bank_reg <= axlon_bank_next;
+			basic_reg <= basic_next;
 		end if;
 	end process;
 
+	atari_dma_access <= not(or_reduce(addr_next(23 downto 18))); -- bit 16,17 left out on purpose, so the Atari 64k is available as 64k-128k for zpu. The zpu has rom at 0-64k...
 	atari_clk_enable <= notify_cpu or notify_antic; -- i.e. we enable cart and freezer on the final cycle of a 6502 or antic access
+	atari_with_dma_clk_enable <= notify_cpu or notify_antic or (notify_dma and atari_dma_access);
 
 	-- float bus when no ram
 	process(last_bus_reg,atari_clk_enable,data_write_next,memory_data_int,write_enable_next)
@@ -329,6 +346,23 @@ BEGIN
 				last_bus_next <= data_write_next(7 downto 0);
 			else
 				last_bus_next <= memory_data_int(7 downto 0);
+			end if;
+		end if;
+	end process;
+
+	-- Capture Axlon bank register write
+	process(axlon_bank_reg,atari_with_dma_clk_enable,data_write_next,addr_next,write_enable_next,atari800mode,portb)
+	begin
+		axlon_bank_next <= axlon_bank_reg;
+		if (atari_with_dma_clk_enable = '1') and (write_enable_next = '1') then
+			if atari800mode = '1' then
+				if (addr_next(15) = addr_next(14)) and (addr_next(13 downto 6) = "00111111") then
+					axlon_bank_next <= data_write_next(7 downto 0);
+				end if;
+			else
+				if (addr_next(15 downto 0) = x"CFFF") and (portb(0) = '1') then
+					axlon_bank_next <= data_write_next(7 downto 0);
+				end if;
 			end if;
 		end if;
 	end process;
@@ -411,7 +445,7 @@ BEGIN
 	-- state machine impl
 	pbi_takeover_adj <= (pbi_takeover) when (freezer_enable='0' or not(freezer_disable_atari)) else '0';
 	process(state_reg, addr_reg, data_write_reg, width_8bit_reg, width_16bit_reg, width_32bit_reg, write_enable_reg, write_enable_freezer_reg, antic_addr, DMA_addr, cpu_addr, request_complete, DMA_8bit_write_enable,DMA_16bit_write_enable,DMA_32bit_write_enable,DMA_read_enable, cpu_write_n, CPU_WRITE_DATA, DMA_WRITE_DATA, antic_fetch_real_reg, cpu_fetch_real_reg, pbi_takeover, pbi_takeover_adj, pbi_release, pbi_cycle_reg,
-        ANTIC_FETCH,DMA_FETCH,CPU_FETCH,
+        ANTIC_FETCH,DMA_FETCH,CPU_FETCH,atari_dma_access,
 		sample_ram_request,sample_ram_address,sample_ram_write_data,sample_ram_write_enable,SDRAM_SAMPLE_ADDR,
         sid_rom_request,sid_rom_address,SDRAM_SID_ADDR)
 	begin
@@ -527,7 +561,7 @@ BEGIN
 					-- directly, then this is the same as if CPU is accessing it, and certainly not Antic
 					-- (specifically important for DMA based XEX loader)
 					antic_fetch_real_next <= '0';
-					cpu_fetch_real_next <= not(or_reduce(DMA_ADDR(23 downto 18)));
+					cpu_fetch_real_next <= atari_dma_access;
 				end if;
 			when state_waiting_antic =>
 				notify_antic <= request_complete;
@@ -610,10 +644,11 @@ BEGIN
 		end if;
 	end process;
 	
-	process(extended_access_cpu_or_antic,extended_access_either,extended_access_addr,addr_next,ram_select,portb,atari800mode)
+	process(extended_access_cpu_or_antic,extended_access_either,extended_access_addr,addr_next,ram_select,portb,atari800mode,axlon_bank_reg)
 	begin	
 		extended_bank <= "0000000"&addr_next(15 downto 14);
 		extended_self_test <= '1';
+		basic_latched_when_banking <= '1';
 		ram_c000 <= '0';
 		has_ram <= '1';
 
@@ -630,8 +665,17 @@ BEGIN
 				when "011" => -- 48k
 					has_ram <= not(addr_next(15)) or not(addr_next(14));
 				when "100" => -- 52k
-					-- yes we have 64k here, but its hidden!
-				--TODO -- 800 memory expansions - axlon??
+					-- TODO atari800mode_16k should be true when a 16K OS rom extension for pure 800 is emulated
+					-- (useful for the new combined XL/800 OS)
+					-- has_ram <= not(atari800mode_16k) or not(addr_next(15)) or not(addr_next(14));
+					has_ram <= not(addr_next(15)) or not(addr_next(14));
+				when "101" => -- 4MB Axlon
+					-- 48K Basic RAM
+					has_ram <= not(addr_next(15)) or not(addr_next(14));
+					-- Plus full Axlon extension
+					if (extended_access_addr='1') then
+						extended_bank <= std_logic_vector("000000100" + unsigned('0'&axlon_bank_reg(7 downto 0)));
+					end if;
 				when others =>
 			end case;
 		else
@@ -657,21 +701,22 @@ BEGIN
 						extended_bank(5 downto 0) <= '1'&portb(7 downto 6)&portb(3 downto 1);
 						extended_self_test <= '0';
 					end if;
+					basic_latched_when_banking <= '0';
 				when "101" => -- 576k rambo
 					if (extended_access_either='1') then
 						extended_bank(5 downto 0) <= '1'&portb(6 downto 5)&portb(3 downto 1);
 					end if;
+					basic_latched_when_banking <= '0';
 				when "110" => -- 1088k rambo
 					if (extended_access_either='1') then
 						extended_bank(5 downto 0) <= portb(7 downto 5)&portb(3 downto 1);
 						extended_bank(6) <= not(or_reduce(portb(7 downto 5)&portb(3)));
 						extended_self_test <= '0';
 					end if;
-				when "111" => -- 4MB!	
+					basic_latched_when_banking <= '0';
+				when "111" => -- 4MB Axlon
 					if (extended_access_addr='1') then
-						extended_bank(7 downto 0) <= portb(7 downto 0);				
-						extended_bank(8) <= not(or_reduce(portb(7 downto 2)));
-						extended_self_test <= and_reduce(portb(6 downto 4));	 -- which means self-test is in the middle of half the banks - euuugh, oh well!						
+						extended_bank <= std_logic_vector("000000100" + unsigned('0'&axlon_bank_reg(7 downto 0)));
 					end if;
 				when others =>
 					-- TODO - portc!
@@ -746,6 +791,8 @@ end generate;
 		atari800mode,
 		ram_c000,
 		has_ram,
+		axlon_bank_reg,
+		atari_dma_access,
 
 		-- cart stuff
 		emu_cart_rd4,emu_cart_rd5,
@@ -779,6 +826,7 @@ end generate;
 		
 		-- SDRAM base addresses
 		extended_self_test,extended_bank,sdram_only_bank,
+		basic_reg,basic_latched_when_banking,
 		SDRAM_BASIC_ROM_ADDR,
 		SDRAM_CART_ADDR,
 		SDRAM_OS_ROM_ADDR,
@@ -832,8 +880,13 @@ end generate;
 		sdram_chip_select <= '0';
 		memac_chip_select <= '0';
 
-	--	if (addr_next(23 downto 17) = "0000000" ) then -- bit 16 left out on purpose, so the Atari 64k is available as 64k-128k for zpu. The zpu has rom at 0-64k...
-		if (or_reduce(addr_next(23 downto 18)) = '0' ) then -- bit 16,17 left out on purpose, so the Atari 64k is available as 64k-128k for zpu. The zpu has rom at 0-64k...
+		basic_next <= basic_reg;
+
+		if portb(4) = '1' or basic_latched_when_banking = '1' then
+			basic_next <= not(portb(1)); -- Only update basic flag when not accessing extended ram (depending on mode)
+		end if;
+
+		if atari_dma_access = '1' then
 
 		SDRAM_ADDR(13 downto 0) <= addr_next(13 downto 0);
 		SDRAM_ADDR(22 downto 14) <= extended_bank;
@@ -1053,7 +1106,7 @@ end generate;
 							request_complete <= '1';
 						end if;
 					else
-						if (atari800mode = '0' and portb(1) = '0') then
+						if (atari800mode = '0' and basic_reg = '1') then
 							sdram_chip_select <= '0';
 							ram_chip_select <= '0';							
 							memac_chip_select <= '0';
