@@ -208,8 +208,8 @@ ENTITY atari800core IS
 
 		-- Special config params
    		RAM_SELECT : in std_logic_vector(2 downto 0); 
-			-- XL/XE mode  : 64K,128K,320KB Compy, 320KB Rambo, 576K Compy, 576K Rambo, 1088K, 4MB
-			-- 400/800 mode: 16K,32K,48K,52K,...? 
+			-- XL/XE mode  : 64K,128K,320KB Compy, 320KB Rambo, 576K Compy, 576K Rambo, 1088K, Axlon 4MB
+			-- 400/800 mode: 16K,32K,48K,52K,Axlon 4MB 
 		CART_EMULATION_SELECT : in std_logic_vector(5 downto 0);
 		PAL :  in STD_LOGIC;
 		GTIA_CLIP_SIDES : IN STD_LOGIC := '0';
