@@ -42,6 +42,7 @@ port (
 	reset_n : in std_logic;
 	power_reset : in std_logic := '0';
 	pal : in std_logic := '1';
+	interlace_field_on : in std_logic := '0';
 	addr : in std_logic_vector(4 downto 0); -- 32 registers based at $D640/$D740
 	data_in: in std_logic_vector(7 downto 0); -- for register write
 	wr_en : in std_logic; -- reading or writing registers?
@@ -1215,7 +1216,7 @@ process(enable_179,soft_reset,
 	xdl_map_read_reg, xdl_map_fetch_reg, xdl_map_fetch_init_reg, xdl_map_read_count_reg, xdl_map_buffer_data_in_reg, xdl_vdelay_reg,
 	xdl_ov_vcount_reg, xdl_ov_fetch_reg, xdl_ov_fetch_init_reg, xdl_ov_hi_reg, xdl_ov_lo_reg, xdl_pixels_reg,
 	xdl_ptrans_reg, xdl_pixel_buffer_windex_reg, xdl_char_attr_reg, xdl_char_code_reg, no_trans_reg, xdl_vcount_reg, xdl_ov_tlive_reg, vsync, pal,
-	xdl_enabled_reg, gtia_palette_reg, xdl_field_end2, xdl_addr_reg, ver_127, turbo)
+	xdl_enabled_reg, gtia_palette_reg, xdl_field_end2, xdl_addr_reg, ver_127, turbo, interlace_field_on)
 
 variable blitter_notify : boolean := false;
 variable xdl_or_blitter_notify : boolean := false;
@@ -1548,8 +1549,12 @@ begin
 	if (vsync = '1') then
 		if pal = '1' then
 			xdl_vdelay_next <= 42;
-		elsif ver_127 = '1' then -- VBXE core 1.27 fixed the NTSC bug
-			xdl_vdelay_next <= 12;
+		elsif ver_127 = '1' then -- VBXE core 1.27 fixed the NTSC bug, but has a new one when interlace hack is on
+			if interlace_field_on = '1' then
+				xdl_vdelay_next <= 11;
+			else
+				xdl_vdelay_next <= 12;
+			end if;
 		else
 			-- Account for the PAL/NTSC bug in the original implementation
 			-- This is purposely 1 scanline too low
